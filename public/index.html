@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Open Frame Annotator</title>
+    <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>📽️ Open Frame Annotator</h1>
+            <p>Бесплатный клон Frame.io для аннотирования YouTube видео</p>
+        </header>
+
+        <div class="create-project">
+            <h2>Создать новый проект</h2>
+            <div class="input-group">
+                <input type="text" id="youtubeUrl" placeholder="https://www.youtube.com/watch?v=..." required>
+                <button id="createProject">Создать проект</button>
+            </div>
+            <div id="result" style="display: none;">
+                <h3>✅ Проект создан!</h3>
+                <p>Ссылка для клиентов:</p>
+                <div class="share-url">
+                    <input type="text" id="shareUrl" readonly>
+                    <button id="copyUrl">Копировать</button>
+                </div>
+                <a id="openProject" href="#" target="_blank">Открыть проект →</a>
+            </div>
+        </div>
+    </div>
+
+    <script src="/main.js"></script>
+</body>
+</html>

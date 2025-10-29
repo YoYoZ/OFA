@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Проект - Open Frame Annotator</title>
+    <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>📽️ Аннотирование видео</h1>
+            <a href="/" class="back-link">← Создать новый проект</a>
+        </header>
+
+        <div id="loading">Загрузка проекта...</div>
+
+        <div id="project-content" style="display: none;">
+            <div class="project-layout">
+                <!-- Left side: Video + Timeline -->
+                <div class="video-section">
+                    <!-- YouTube Player -->
+                    <div class="video-container">
+                        <div id="youtube-player"></div>
+                    </div>
+
+                    <!-- Annotation Form -->
+                    <div class="annotation-form">
+                        <h3>Добавить комментарий</h3>
+                        <div class="form-row">
+                            <input type="text" id="authorName" placeholder="Ваше имя" required>
+                            <input type="text" id="commentText" placeholder="Текст комментария" required>
+                            <button id="addAnnotation">Добавить</button>
+                        </div>
+                        <div class="current-time">Текущее время: <span id="currentTime">00:00</span></div>
+                    </div>
+
+                    <!-- Timeline -->
+                    <div class="timeline-container">
+                        <h3>Таймлиния правок</h3>
+                        <div id="timeline" class="timeline"></div>
+                    </div>
+                </div>
+
+                <!-- Right side: Comments -->
+                <div class="comments-section">
+                    <div class="annotations-list">
+                        <h3>Комментарии (<span id="annotationsCount">0</span>)</h3>
+                        <div id="annotationsList"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://www.youtube.com/iframe_api"></script>
+    <script src="/project.js"></script>
+</body>
+</html>
