@@ -1,7 +1,7 @@
 {
   "name": "open-frame-annotator",
-  "version": "2.0.0",
-  "description": "Open-source YouTube video annotation tool with dark theme",
+  "version": "2.2.0",
+  "description": "Open-source YouTube video annotation tool with secure admin panel",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
@@ -11,7 +11,9 @@
     "express": "^4.18.2",
     "sqlite3": "^5.1.6",
     "cors": "^2.8.5",
-    "uuid": "^9.0.0"
+    "uuid": "^9.0.0",
+    "express-session": "^1.17.3",
+    "dotenv": "^16.3.1"
   },
   "devDependencies": {
     "nodemon": "^3.0.1"

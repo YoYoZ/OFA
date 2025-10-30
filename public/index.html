@@ -1,36 +1,81 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Open Frame Annotator</title>
-    <link rel="stylesheet" href="/style.css">
+    <link rel="stylesheet" href="style.css">
 </head>
 <body>
     <div class="container">
         <header>
-            <h1>📽️ Open Frame Annotator</h1>
-            <p>Бесплатный клон Frame.io для аннотирования YouTube видео</p>
+            <h1>🎬 Open Frame Annotator</h1>
+            <p>Open-source tool for collaborative YouTube video annotation</p>
         </header>
 
         <div class="create-project">
-            <h2>Создать новый проект</h2>
+            <h2>Create New Project</h2>
             <div class="input-group">
-                <input type="text" id="youtubeUrl" placeholder="https://www.youtube.com/watch?v=..." required>
-                <button id="createProject">Создать проект</button>
+                <input type="text" id="youtubeUrl" placeholder="Paste YouTube link here..." />
+                <button onclick="createProject()">Create Project</button>
             </div>
             <div id="result" style="display: none;">
-                <h3>✅ Проект создан!</h3>
-                <p>Ссылка для клиентов:</p>
+                <h3>✅ Project created successfully!</h3>
                 <div class="share-url">
-                    <input type="text" id="shareUrl" readonly>
-                    <button id="copyUrl">Копировать</button>
+                    <input type="text" id="shareUrl" readonly />
+                    <button onclick="copyUrl()">Copy Link</button>
                 </div>
-                <a id="openProject" href="#" target="_blank">Открыть проект →</a>
+                <a id="openProject" href="#" target="_blank">Open Project →</a>
             </div>
         </div>
     </div>
 
-    <script src="/main.js"></script>
+    <script>
+        async function createProject() {
+            const url = document.getElementById('youtubeUrl').value.trim();
+
+            if (!url) {
+                alert('Please enter YouTube URL');
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/projects', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ youtube_url: url })
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to create project');
+                }
+
+                const data = await response.json();
+
+                document.getElementById('shareUrl').value = data.share_url;
+                document.getElementById('openProject').href = data.share_url;
+                document.getElementById('result').style.display = 'block';
+                document.getElementById('youtubeUrl').value = '';
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Error creating project. Please try again.');
+            }
+        }
+
+        function copyUrl() {
+            const input = document.getElementById('shareUrl');
+            input.select();
+            document.execCommand('copy');
+            alert('Link copied to clipboard!');
+        }
+
+        document.getElementById('youtubeUrl').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                createProject();
+            }
+        });
+    </script>
 </body>
 </html>

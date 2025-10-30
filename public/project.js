@@ -8,13 +8,24 @@ let playerInitAttempts = 0;
 
 document.addEventListener('DOMContentLoaded', function() {
     const projectId = window.location.pathname.split('/').pop();
+
     const authorInput = document.getElementById('authorName');
     try {
         const savedAuthor = localStorage.getItem('author_name');
-        if (savedAuthor) authorInput.value = savedAuthor;
+        if (savedAuthor) {
+            authorInput.value = savedAuthor;
+            console.log('✅ Loaded author');
+        }
     } catch (e) {}
-    authorInput.addEventListener('input', (e) => { try { localStorage.setItem('author_name', e.target.value); } catch {} });
-    authorInput.addEventListener('blur', (e) => { try { localStorage.setItem('author_name', e.target.value); } catch {} });
+
+    authorInput.addEventListener('input', function(e) {
+        try { localStorage.setItem('author_name', e.target.value); } catch (err) {}
+    });
+
+    authorInput.addEventListener('blur', function(e) {
+        try { localStorage.setItem('author_name', e.target.value); } catch (err) {}
+    });
+
     document.getElementById('addAnnotation').addEventListener('click', addAnnotation);
     loadProject(projectId);
 });
@@ -22,6 +33,7 @@ document.addEventListener('DOMContentLoaded', function() {
 function playBellSound() {
     const audioContext = new (window.AudioContext || window.webkitAudioContext)();
     const now = audioContext.currentTime;
+
     [800, 1000, 1200].forEach((freq, i) => {
         const osc = audioContext.createOscillator();
         const gain = audioContext.createGain();
@@ -60,148 +72,329 @@ function playTrashSound() {
 }
 
 function onYouTubeIframeAPIReady() {
+    console.log('🎬 YouTube API ready');
     isYouTubeReady = true;
-    if (isProjectLoaded && projectData) initializePlayer();
+
+    if (isProjectLoaded && projectData) {
+        initializePlayer();
+    }
 }
 
 async function loadProject(projectId) {
     try {
         const response = await fetch(`/api/projects/${projectId}`);
-        if (!response.ok) throw new Error('Проект не найден');
+
+        if (!response.ok) {
+            throw new Error('Project not found');
+        }
+
         projectData = await response.json();
         annotations = projectData.annotations || [];
         isProjectLoaded = true;
+
+        console.log('📦 Project loaded', projectData);
+
         updateAnnotationsList();
         updateTimeline();
+
         document.getElementById('loading').style.display = 'none';
         document.getElementById('project-content').style.display = 'block';
+
         tryInitializePlayer();
+
     } catch (error) {
-        document.getElementById('loading').textContent = 'Ошибка: ' + error.message;
+        console.error('❌ Error loading project:', error);
+        document.getElementById('loading').textContent = 'Error: ' + error.message;
     }
 }
 
 function tryInitializePlayer() {
     playerInitAttempts++;
+    console.log(`🎬 Attempt ${playerInitAttempts} to initialize player`);
+
     if (typeof YT !== 'undefined' && typeof YT.Player === 'function') {
+        console.log('✅ YouTube API is ready');
         isYouTubeReady = true;
         initializePlayer();
     } else if (playerInitAttempts < 20) {
+        console.log('⏳ YouTube API not ready, retrying in 200ms...');
         setTimeout(tryInitializePlayer, 200);
+    } else {
+        console.error('❌ YouTube API failed to load');
+        alert('Failed to load YouTube player. Please refresh the page.');
     }
 }
 
 function initializePlayer() {
-    if (player && typeof player.getPlayerState === 'function') return;
-    if (!projectData?.project || !isYouTubeReady) return;
+    if (player && typeof player.getPlayerState === 'function') {
+        console.log('⚠️ Player already initialized');
+        return;
+    }
+
+    console.log('🎬 Initializing player...');
+
+    if (!projectData || !projectData.project) {
+        console.error('❌ No project data');
+        return;
+    }
+
+    if (!isYouTubeReady) {
+        console.log('⏳ YouTube API not ready yet');
+        return;
+    }
+
     const videoId = extractVideoId(projectData.project.youtube_url);
-    if (!videoId) return;
-    const playerDiv = document.getElementById('youtube-player');
-    playerDiv.innerHTML = '';
-    player = new YT.Player('youtube-player', {
-        height: '450', width: '800', videoId: videoId,
-        playerVars: { 'autoplay': 0, 'playsinline': 1, 'rel': 0, 'modestbranding': 1, 'origin': window.location.origin, 'enablejsapi': 1 },
-        events: { 'onReady': onPlayerReady, 'onStateChange': onPlayerStateChange }
-    });
+
+    if (!videoId) {
+        console.error('❌ Invalid YouTube URL');
+        document.getElementById('loading').textContent = 'Invalid YouTube link';
+        return;
+    }
+
+    console.log('🎬 Creating player for video:', videoId);
+
+    try {
+        const playerDiv = document.getElementById('youtube-player');
+        playerDiv.innerHTML = '';
+
+        player = new YT.Player('youtube-player', {
+            height: '450',
+            width: '800',
+            videoId: videoId,
+            playerVars: {
+                'autoplay': 0,
+                'playsinline': 1,
+                'rel': 0,
+                'modestbranding': 1,
+                'origin': window.location.origin,
+                'enablejsapi': 1
+            },
+            events: {
+                'onReady': onPlayerReady,
+                'onStateChange': onPlayerStateChange,
+                'onError': onPlayerError
+            }
+        });
+
+        console.log('✅ Player created successfully');
+    } catch (error) {
+        console.error('❌ Error creating player:', error);
+        alert('Error creating player: ' + error.message);
+    }
 }
 
-function onPlayerReady() {
+function onPlayerReady(event) {
+    console.log('✅ Player ready');
+
     setTimeout(() => {
         try {
             videoDuration = player.getDuration();
-            if (videoDuration > 0) updateTimeline();
-        } catch (e) {}
+            if (videoDuration && videoDuration > 0) {
+                console.log('⏱️ Video duration:', videoDuration);
+                updateTimeline();
+            } else {
+                console.log('⏳ Duration not available yet');
+            }
+        } catch (e) {
+            console.error('Error getting duration:', e);
+        }
     }, 500);
+
     setInterval(updateCurrentTime, 1000);
 }
 
 function onPlayerStateChange(event) {
+    console.log('Player state changed:', event.data);
+
     if (event.data === YT.PlayerState.PLAYING || event.data === YT.PlayerState.BUFFERING) {
         try {
             const newDuration = player.getDuration();
-            if (newDuration > 0 && newDuration !== videoDuration) {
+            if (newDuration && newDuration > 0 && newDuration !== videoDuration) {
                 videoDuration = newDuration;
+                console.log('⏱️ Updated duration:', videoDuration);
                 updateTimeline();
             }
-        } catch (e) {}
+        } catch (e) {
+            console.error('Error updating duration:', e);
+        }
     }
 }
 
+function onPlayerError(event) {
+    console.error('❌ Player error:', event.data);
+    let errorMsg = 'Video playback error.';
+    switch(event.data) {
+        case 2:
+            errorMsg += ' Invalid video ID.';
+            break;
+        case 5:
+            errorMsg += ' HTML5 player error.';
+            break;
+        case 100:
+            errorMsg += ' Video not found or deleted.';
+            break;
+        case 101:
+        case 150:
+            errorMsg += ' Video owner disabled embedding.';
+            break;
+    }
+    alert(errorMsg);
+}
+
 function updateCurrentTime() {
-    if (player?.getCurrentTime) {
-        try { document.getElementById('currentTime').textContent = formatTime(player.getCurrentTime()); } catch (e) {}
+    if (player && player.getCurrentTime) {
+        try {
+            const currentTime = player.getCurrentTime();
+            document.getElementById('currentTime').textContent = formatTime(currentTime);
+        } catch (e) {}
     }
 }
 
 async function addAnnotation() {
     const author = document.getElementById('authorName').value.trim();
     const text = document.getElementById('commentText').value.trim();
-    if (!author || !text || !player?.getCurrentTime) return;
+
+    if (!author || !text) {
+        alert('Please fill in all fields');
+        return;
+    }
+
+    if (!player || !player.getCurrentTime) {
+        alert('Player is not ready');
+        return;
+    }
+
     let timecode;
-    try { timecode = player.getCurrentTime(); } catch { return; }
-    try { localStorage.setItem('author_name', author); } catch {}
+    try {
+        timecode = player.getCurrentTime();
+    } catch (e) {
+        alert('Error getting current time');
+        return;
+    }
+
+    try {
+        localStorage.setItem('author_name', author);
+    } catch (e) {}
+
     const projectId = window.location.pathname.split('/').pop();
+
     try {
         const response = await fetch(`/api/projects/${projectId}/annotations`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
             body: JSON.stringify({ author, text, timecode })
         });
-        if (!response.ok) return;
+
+        if (!response.ok) {
+            throw new Error('Error adding comment');
+        }
+
         const newAnnotation = await response.json();
         annotations.push(newAnnotation);
         annotations.sort((a, b) => a.timecode - b.timecode);
+
         updateAnnotationsList();
         updateTimeline();
+
         document.getElementById('commentText').value = '';
-    } catch {}
+        console.log('✅ Comment added');
+
+    } catch (error) {
+        console.error('❌ Error adding comment:', error);
+        alert('Error adding comment');
+    }
 }
 
 async function deleteAnnotation(annotationId) {
-    if (!confirm('Удалить?')) return;
+    if (!confirm('Delete this comment?')) {
+        return;
+    }
+
     try {
-        await fetch(`/api/annotations/${annotationId}`, { method: 'DELETE' });
+        const response = await fetch(`/api/annotations/${annotationId}`, {
+            method: 'DELETE'
+        });
+
+        if (!response.ok) {
+            throw new Error('Error deleting comment');
+        }
+
         annotations = annotations.filter(a => a.id !== annotationId);
+
         updateAnnotationsList();
         updateTimeline();
+
         playTrashSound();
-    } catch {}
+
+        console.log('✅ Comment deleted');
+
+    } catch (error) {
+        console.error('❌ Error deleting comment:', error);
+        alert('Error deleting comment');
+    }
 }
 
 async function toggleResolve(annotationId) {
     const annotation = annotations.find(a => a.id === annotationId);
     if (!annotation) return;
+
     const newResolvedState = annotation.resolved ? 0 : 1;
+
     try {
-        await fetch(`/api/annotations/${annotationId}/resolve`, {
-            method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        const response = await fetch(`/api/annotations/${annotationId}/resolve`, {
+            method: 'PATCH',
+            headers: {
+                'Content-Type': 'application/json',
+            },
             body: JSON.stringify({ resolved: newResolvedState })
         });
+
+        if (!response.ok) {
+            throw new Error('Error updating status');
+        }
+
         annotation.resolved = newResolvedState;
+
         updateAnnotationsList();
         updateTimeline();
-        if (newResolvedState === 1) playBellSound();
-    } catch {}
+
+        if (newResolvedState === 1) {
+            playBellSound();
+        }
+
+    } catch (error) {
+        console.error('❌ Error toggling status:', error);
+        alert('Error updating comment status');
+    }
 }
 
 function updateAnnotationsList() {
     const list = document.getElementById('annotationsList');
     const count = document.getElementById('annotationsCount');
+
     count.textContent = annotations.length;
+
     if (annotations.length === 0) {
-        list.innerHTML = '<p style="color: #9e9e9e; text-align: center;">Нет комментариев</p>';
+        list.innerHTML = '<p style="color: #9e9e9e; text-align: center;">No comments yet</p>';
         return;
     }
-    list.innerHTML = annotations.map(a => `
-        <div class="annotation-item ${a.resolved ? 'resolved' : ''}">
+
+    list.innerHTML = annotations.map(annotation => `
+        <div class="annotation-item ${annotation.resolved ? 'resolved' : ''}" data-id="${annotation.id}">
             <div class="annotation-meta">
-                <span class="annotation-author">${escapeHtml(a.author)}</span>
-                <span class="annotation-timecode" onclick="seekToTime(${a.timecode})">${formatTime(a.timecode)}</span>
+                <span class="annotation-author">${escapeHtml(annotation.author)}</span>
+                <span class="annotation-timecode" onclick="seekToTime(${annotation.timecode})">${formatTime(annotation.timecode)}</span>
             </div>
-            <div class="annotation-text">${escapeHtml(a.text)}</div>
+            <div class="annotation-text">${escapeHtml(annotation.text)}</div>
             <div class="annotation-actions">
-                <button class="delete-btn" onclick="deleteAnnotation('${a.id}')">🗑️ Удалить</button>
-                <button class="resolve-btn ${a.resolved ? 'resolved' : ''}" onclick="toggleResolve('${a.id}')">
-                    ${a.resolved ? '✓ Принято' : '✓ Принять'}
+                <button class="delete-btn" onclick="deleteAnnotation('${annotation.id}')">
+                    🗑️ Delete
+                </button>
+                <button class="resolve-btn ${annotation.resolved ? 'resolved' : ''}" 
+                        onclick="toggleResolve('${annotation.id}')">
+                    ${annotation.resolved ? '✓ Accepted' : '✓ Accept'}
                 </button>
             </div>
         </div>
@@ -210,59 +403,104 @@ function updateAnnotationsList() {
 
 function clusterAnnotations(annotations, maxTime) {
     if (annotations.length === 0) return [];
+
     const clusterRadius = 2;
     const clusters = [];
+
     annotations.forEach(annotation => {
         const position = (annotation.timecode / maxTime) * 100;
-        let found = clusters.find(c => Math.abs(c.position - position) < clusterRadius);
-        if (found) {
-            found.annotations.push(annotation);
-            found.position = found.annotations.reduce((sum, a) => sum + (a.timecode / maxTime) * 100, 0) / found.annotations.length;
+
+        let foundCluster = clusters.find(cluster => 
+            Math.abs(cluster.position - position) < clusterRadius
+        );
+
+        if (foundCluster) {
+            foundCluster.annotations.push(annotation);
+            foundCluster.position = foundCluster.annotations.reduce((sum, a) => 
+                sum + (a.timecode / maxTime) * 100, 0) / foundCluster.annotations.length;
         } else {
-            clusters.push({ position, annotations: [annotation] });
+            clusters.push({
+                position: position,
+                annotations: [annotation]
+            });
         }
     });
+
     return clusters;
 }
 
 function updateTimeline() {
     const timeline = document.getElementById('timeline');
+
     if (annotations.length === 0) {
         timeline.innerHTML = '<div class="timeline-line"></div>';
         return;
     }
+
     const maxTime = videoDuration > 0 ? videoDuration : Math.max(...annotations.map(a => a.timecode)) + 60;
-    let html = '<div class="timeline-line"></div>';
+
+    let markersHtml = '<div class="timeline-line"></div>';
+
     const clusters = clusterAnnotations(annotations, maxTime);
 
-    clusters.forEach((cluster, idx) => {
-        if (cluster.annotations.length > 1) {
+    clusters.forEach((cluster, clusterIndex) => {
+        const isCluster = cluster.annotations.length > 1;
+
+        if (isCluster) {
             const hasUnresolved = cluster.annotations.some(a => !a.resolved);
             const hasResolved = cluster.annotations.some(a => a.resolved);
+
             let color = '#ffd700';
-            if (hasUnresolved && !hasResolved) color = '#ff6b6b';
-            else if (hasResolved && !hasUnresolved) color = '#52b788';
-            html += `<div class="timeline-cluster" data-cluster="${idx}" style="left: ${cluster.position}%; background-color: ${color};" onmouseenter="expandCluster(${idx}, ${cluster.position})">
-                <span class="cluster-count">${cluster.annotations.length}</span>
-            </div>`;
+            if (hasUnresolved && !hasResolved) {
+                color = '#ff6b6b';
+            } else if (hasResolved && !hasUnresolved) {
+                color = '#52b788';
+            }
+
+            const titles = cluster.annotations.map(a => 
+                `${escapeHtml(a.author)}: ${escapeHtml(a.text)}`
+            ).join('\n');
+
+            markersHtml += `
+                <div class="timeline-cluster" 
+                     data-cluster="${clusterIndex}"
+                     style="left: ${cluster.position}%; background-color: ${color};"
+                     onmouseenter="expandCluster(${clusterIndex}, ${cluster.position})"
+                     title="${titles}">
+                    <span class="cluster-count">${cluster.annotations.length}</span>
+                </div>
+            `;
         } else {
-            const a = cluster.annotations[0];
-            const color = a.resolved ? '#52b788' : '#ff6b6b';
-            html += `<div class="timeline-marker" style="left: ${cluster.position}%; background-color: ${color};" onclick="seekToTime(${a.timecode})"></div>`;
+            const annotation = cluster.annotations[0];
+            const color = annotation.resolved ? '#52b788' : '#ff6b6b';
+
+            markersHtml += `
+                <div class="timeline-marker" 
+                     style="left: ${cluster.position}%; background-color: ${color};" 
+                     onclick="seekToTime(${annotation.timecode})"
+                     title="${escapeHtml(annotation.author)}: ${escapeHtml(annotation.text)} (${formatTime(annotation.timecode)}) ${annotation.resolved ? '[Accepted]' : ''}">
+                </div>
+            `;
         }
     });
-    timeline.innerHTML = html;
+
+    timeline.innerHTML = markersHtml;
+
     timeline.dataset.clusters = JSON.stringify(clusters.map(c => ({
         position: c.position,
-        annotations: c.annotations.map(a => ({ id: a.id, timecode: a.timecode, resolved: a.resolved, author: a.author, text: a.text }))
+        annotations: c.annotations.map(a => ({
+            id: a.id,
+            timecode: a.timecode,
+            resolved: a.resolved,
+            author: a.author,
+            text: a.text
+        }))
     })));
 }
 
-// КЛЮЧЕВОЕ: ОДНА обёртка на ВСЁ облачко!
 function expandCluster(clusterIndex, centerPos) {
     const timeline = document.getElementById('timeline');
 
-    // Удаляем старое облачко если есть
     const oldWrapper = timeline.querySelector('.cluster-wrapper');
     if (oldWrapper) oldWrapper.remove();
 
@@ -273,19 +511,15 @@ function expandCluster(clusterIndex, centerPos) {
     const clusterEl = timeline.querySelector(`[data-cluster="${clusterIndex}"]`);
     if (!clusterEl) return;
 
-    // ОБЁРТКА на всё облачко - ОДИН onmouseleave!
     const wrapper = document.createElement('div');
     wrapper.className = 'cluster-wrapper';
     wrapper.style.position = 'absolute';
-    wrapper.style.left = `calc(${centerPos}% - 60px)`;
-    wrapper.style.top = '-60px';
-    wrapper.style.width = '120px';
-    wrapper.style.height = '180px';
+    wrapper.style.left = `calc(${centerPos}% - 75px)`;
+    wrapper.style.top = '-50px';
+    wrapper.style.width = '150px';
+    wrapper.style.height = '160px';
     wrapper.style.zIndex = '10';
-    // Для отладки раскомментируй:
-    // wrapper.style.background = 'rgba(0,255,0,0.1)';
 
-    // ОДИН обработчик на ВСЕЙ обёртке!
     wrapper.onmouseleave = () => {
         wrapper.remove();
         clusterEl.style.opacity = '1';
@@ -329,30 +563,38 @@ function expandCluster(clusterIndex, centerPos) {
 }
 
 function seekToTime(seconds) {
-    if (player?.seekTo) {
+    if (player && player.seekTo) {
         try {
             player.seekTo(seconds, true);
             player.playVideo();
-        } catch (e) {}
+        } catch (e) {
+            console.error('Error seeking:', e);
+        }
     }
 }
 
 function extractVideoId(url) {
     const patterns = [
         /(?:youtube\.com\/watch\?v=)([^&]+)/,
-        /(?:youtu\.be\/)([^?]+)/
+        /(?:youtube\.com\/embed\/)([^?]+)/,
+        /(?:youtu\.be\/)([^?]+)/,
+        /(?:youtube\.com\/v\/)([^?]+)/
     ];
-    for (const p of patterns) {
-        const m = url.match(p);
-        if (m?.[1]) return m[1];
+
+    for (const pattern of patterns) {
+        const match = url.match(pattern);
+        if (match && match[1]) {
+            return match[1];
+        }
     }
+
     return null;
 }
 
 function formatTime(seconds) {
-    const m = Math.floor(seconds / 60);
-    const s = Math.floor(seconds % 60);
-    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+    const minutes = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
 }
 
 function escapeHtml(text) {
