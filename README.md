@@ -13,7 +13,7 @@ Perfect for **video reviews**, **tutorials**, **team feedback**, and **collabora
 
 - 🎥 **YouTube Integration**: Paste any YouTube URL to create a project with embedded player
 - ⏱️ **Time-Stamped Annotations**: Add comments at specific video timestamps with author names
-- ✅ **Resolved Status**: Mark comments as "Accepted" (green) or "Unresolved" (red)
+- ✅ **Resolved Status**: Mark comments as "Accepted" (green)
 - 🎯 **Smart Timeline Clustering**: Multiple nearby annotations cluster together; hover to expand
 - 🛠️ **Secure Admin Panel**: Password-protected admin interface to view/delete projects and statistics
 - 🔊 **Audio Feedback**: Subtle bell sound for resolved comments, trash sound for deletions
@@ -41,6 +41,7 @@ cd open-frame-annotator
 
 # Create .env file with admin password
 echo "ADMIN_PASSWORD=your_secure_password" > .env
+Default password is CHANGE_ME
 
 # Start with Docker
 docker-compose up --build
@@ -60,6 +61,7 @@ npm install
 
 # Create .env file
 echo "ADMIN_PASSWORD=your_secure_password" > .env
+Default password is CHANGE_ME
 
 # Start the server
 npm start
@@ -262,7 +264,7 @@ POST /api/admin/logout
 ### Environment Variables (`.env`)
 
 ```env
-# Required: Admin panel password
+# Required: Admin panel password (defaults to CHANGE_ME)
 ADMIN_PASSWORD=your_secure_password_here
 
 # Optional: Session secret (defaults to auto-generated)
@@ -380,7 +382,7 @@ Contributions are welcome! Here's how:
 
 ```bash
 # Clone your fork
-git clone https://github.com/YOUR_USERNAME/open-frame-annotator.git
+git clone https://github.com/YoYoZ/open-frame-annotator.git
 
 # Install dependencies
 npm install
@@ -401,7 +403,7 @@ This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) 
 
 - **Issues**: [GitHub Issues](https://github.com/yourusername/open-frame-annotator/issues)
 - **Discussions**: [GitHub Discussions](https://github.com/yourusername/open-frame-annotator/discussions)
-- **Email**: your-email@example.com
+- **Email**: yoyoza5@gmail.com
 
 ---
 
