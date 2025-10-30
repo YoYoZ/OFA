@@ -401,8 +401,8 @@ This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) 
 
 ## 💬 Support
 
-- **Issues**: [GitHub Issues](https://github.com/yourusername/open-frame-annotator/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/yourusername/open-frame-annotator/discussions)
+- **Issues**: [GitHub Issues](https://github.com/YoYoZ/OFA/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/YoYoZ/OFA/discussions)
 - **Email**: yoyoza5@gmail.com
 
 ---
