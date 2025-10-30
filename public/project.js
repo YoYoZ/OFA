@@ -71,6 +71,25 @@ function playTrashSound() {
     noise.stop(now + 0.3);
 }
 
+function playRejectSound() {
+    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    const now = audioContext.currentTime;
+
+    // Два низких звука для "отклонения"
+    [300, 200].forEach((freq, i) => {
+        const osc = audioContext.createOscillator();
+        const gain = audioContext.createGain();
+        osc.connect(gain);
+        gain.connect(audioContext.destination);
+        osc.frequency.value = freq;
+        osc.type = 'sine';
+        gain.gain.setValueAtTime(0.15, now + i * 0.15);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + i * 0.15 + 0.4);
+        osc.start(now + i * 0.15);
+        osc.stop(now + i * 0.15 + 0.4);
+    });
+}
+
 function onYouTubeIframeAPIReady() {
     console.log('🎬 YouTube API ready');
     isYouTubeReady = true;
@@ -336,36 +355,37 @@ async function deleteAnnotation(annotationId) {
     }
 }
 
-async function toggleResolve(annotationId) {
+async function updateAnnotationStatus(annotationId, status) {
+    // status: 0 = pending (yellow), 1 = accepted (green), 2 = rejected (red)
     const annotation = annotations.find(a => a.id === annotationId);
     if (!annotation) return;
 
-    const newResolvedState = annotation.resolved ? 0 : 1;
-
     try {
-        const response = await fetch(`/api/annotations/${annotationId}/resolve`, {
+        const response = await fetch(`/api/annotations/${annotationId}/status`, {
             method: 'PATCH',
             headers: {
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify({ resolved: newResolvedState })
+            body: JSON.stringify({ status: status })
         });
 
         if (!response.ok) {
             throw new Error('Error updating status');
         }
 
-        annotation.resolved = newResolvedState;
+        annotation.status = status;
 
         updateAnnotationsList();
         updateTimeline();
 
-        if (newResolvedState === 1) {
+        if (status === 1) {
             playBellSound();
+        } else if (status === 2) {
+            playRejectSound();
         }
 
     } catch (error) {
-        console.error('❌ Error toggling status:', error);
+        console.error('❌ Error updating status:', error);
         alert('Error updating comment status');
     }
 }
@@ -381,8 +401,26 @@ function updateAnnotationsList() {
         return;
     }
 
-    list.innerHTML = annotations.map(annotation => `
-        <div class="annotation-item ${annotation.resolved ? 'resolved' : ''}" data-id="${annotation.id}">
+    list.innerHTML = annotations.map(annotation => {
+        // Если есть поле resolved (старая система), преобразуем в status
+        let status = annotation.status !== undefined ? annotation.status : (annotation.resolved ? 1 : 0);
+
+        let statusClass = 'pending';
+        let statusText = 'Pending';
+        let statusEmoji = '◯';
+
+        if (status === 1) {
+            statusClass = 'accepted';
+            statusText = '✓ Accept';
+            statusEmoji = '✓';
+        } else if (status === 2) {
+            statusClass = 'rejected';
+            statusText = '✗ Reject';
+            statusEmoji = '✗';
+        }
+
+        return `
+        <div class="annotation-item ${statusClass}" data-id="${annotation.id}">
             <div class="annotation-meta">
                 <span class="annotation-author">${escapeHtml(annotation.author)}</span>
                 <span class="annotation-timecode" onclick="seekToTime(${annotation.timecode})">${formatTime(annotation.timecode)}</span>
@@ -392,13 +430,16 @@ function updateAnnotationsList() {
                 <button class="delete-btn" onclick="deleteAnnotation('${annotation.id}')">
                     🗑️ Delete
                 </button>
-                <button class="resolve-btn ${annotation.resolved ? 'resolved' : ''}" 
-                        onclick="toggleResolve('${annotation.id}')">
-                    ${annotation.resolved ? '✓ Accepted' : '✓ Accept'}
+                <button class="reject-btn ${status === 2 ? 'active' : ''}" onclick="updateAnnotationStatus('${annotation.id}', 2)">
+                    ✗ Reject
+                </button>
+                <button class="accept-btn ${status === 1 ? 'active' : ''}" onclick="updateAnnotationStatus('${annotation.id}', 1)">
+                    ✓ Accept
                 </button>
             </div>
         </div>
-    `).join('');
+        `;
+    }).join('');
 }
 
 function clusterAnnotations(annotations, maxTime) {
@@ -447,14 +488,17 @@ function updateTimeline() {
         const isCluster = cluster.annotations.length > 1;
 
         if (isCluster) {
-            const hasUnresolved = cluster.annotations.some(a => !a.resolved);
-            const hasResolved = cluster.annotations.some(a => a.resolved);
+            const hasAccepted = cluster.annotations.some(a => (a.status !== undefined ? a.status === 1 : a.resolved));
+            const hasRejected = cluster.annotations.some(a => a.status === 2);
+            const hasPending = cluster.annotations.some(a => (a.status !== undefined ? a.status === 0 : !a.resolved && !a.status));
 
-            let color = '#ffd700';
-            if (hasUnresolved && !hasResolved) {
-                color = '#ff6b6b';
-            } else if (hasResolved && !hasUnresolved) {
-                color = '#52b788';
+            let color = '#ffd700'; // yellow по умолчанию
+            if (hasAccepted && !hasRejected && !hasPending) {
+                color = '#52b788'; // green - все приняты
+            } else if (hasRejected && !hasAccepted && !hasPending) {
+                color = '#e74c3c'; // red - все отклонены
+            } else if (hasAccepted || hasRejected) {
+                color = '#ffd700'; // yellow - смесь статусов
             }
 
             const titles = cluster.annotations.map(a => 
@@ -472,13 +516,17 @@ function updateTimeline() {
             `;
         } else {
             const annotation = cluster.annotations[0];
-            const color = annotation.resolved ? '#52b788' : '#ff6b6b';
+            let status = annotation.status !== undefined ? annotation.status : (annotation.resolved ? 1 : 0);
+
+            let color = '#ffd700'; // yellow - pending
+            if (status === 1) color = '#52b788'; // green - accepted
+            if (status === 2) color = '#e74c3c'; // red - rejected
 
             markersHtml += `
                 <div class="timeline-marker" 
                      style="left: ${cluster.position}%; background-color: ${color};" 
                      onclick="seekToTime(${annotation.timecode})"
-                     title="${escapeHtml(annotation.author)}: ${escapeHtml(annotation.text)} (${formatTime(annotation.timecode)}) ${annotation.resolved ? '[Accepted]' : ''}">
+                     title="${escapeHtml(annotation.author)}: ${escapeHtml(annotation.text)} (${formatTime(annotation.timecode)})">
                 </div>
             `;
         }
@@ -491,7 +539,7 @@ function updateTimeline() {
         annotations: c.annotations.map(a => ({
             id: a.id,
             timecode: a.timecode,
-            resolved: a.resolved,
+            status: a.status !== undefined ? a.status : (a.resolved ? 1 : 0),
             author: a.author,
             text: a.text
         }))
@@ -533,7 +581,10 @@ function expandCluster(clusterIndex, centerPos) {
         const angle = angleStep * i;
         const offsetX = Math.cos(angle) * cloudRadius;
         const offsetY = Math.sin(angle) * cloudRadius;
-        const color = annotation.resolved ? '#52b788' : '#ff6b6b';
+
+        let color = '#ffd700'; // yellow - pending
+        if (annotation.status === 1) color = '#52b788'; // green - accepted
+        if (annotation.status === 2) color = '#e74c3c'; // red - rejected
 
         const dot = document.createElement('div');
         dot.className = 'timeline-mini-marker';

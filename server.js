@@ -9,11 +9,9 @@ require('dotenv').config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Middleware
 app.use(cors());
 app.use(express.json());
 
-// Session для админки
 app.use(session({
   secret: process.env.SESSION_SECRET || 'change-this-secret-key-in-production',
   resave: false,
@@ -24,10 +22,8 @@ app.use(session({
   }
 }));
 
-// Serve static files
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Database setup
 const db = new sqlite3.Database('./data/annotations.db', (err) => {
   if (err) {
     console.error('Error opening database:', err.message);
@@ -51,12 +47,12 @@ function initDatabase() {
       author TEXT NOT NULL,
       text TEXT NOT NULL,
       timecode REAL NOT NULL,
-      resolved INTEGER DEFAULT 0,
+      status INTEGER DEFAULT 0,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (project_id) REFERENCES projects (id)
     )`);
 
-    db.run(`ALTER TABLE annotations ADD COLUMN resolved INTEGER DEFAULT 0`, (err) => {
+    db.run(`ALTER TABLE annotations ADD COLUMN status INTEGER DEFAULT 0`, (err) => {
       if (err && !err.message.includes('duplicate column')) {
         console.error('Migration error:', err);
       }
@@ -66,16 +62,12 @@ function initDatabase() {
   });
 }
 
-// ===== ADMIN AUTH MIDDLEWARE =====
-
 function checkAdminAuth(req, res, next) {
   if (req.session && req.session.isAdmin) {
     return next();
   }
   res.status(401).json({ error: 'Unauthorized' });
 }
-
-// ===== ADMIN AUTH ROUTES =====
 
 app.post('/api/admin/login', (req, res) => {
   const { password } = req.body;
@@ -108,8 +100,6 @@ app.get('/api/admin/check', (req, res) => {
     res.json({ authenticated: false });
   }
 });
-
-// ===== ADMIN API ROUTES (PROTECTED) =====
 
 app.get('/api/admin/projects', checkAdminAuth, (req, res) => {
   db.all(`
@@ -170,8 +160,6 @@ app.delete('/api/admin/projects/:id', checkAdminAuth, (req, res) => {
     });
   });
 });
-
-// ===== REGULAR API ROUTES =====
 
 app.post('/api/projects', (req, res) => {
   const { youtube_url } = req.body;
@@ -239,7 +227,7 @@ app.post('/api/projects/:id/annotations', (req, res) => {
 
   const annotationId = uuidv4();
 
-  db.run('INSERT INTO annotations (id, project_id, author, text, timecode, resolved) VALUES (?, ?, ?, ?, ?, 0)', 
+  db.run('INSERT INTO annotations (id, project_id, author, text, timecode, status) VALUES (?, ?, ?, ?, ?, 0)', 
     [annotationId, id, author, text, timecode], function(err) {
     if (err) {
       console.error(err);
@@ -252,7 +240,7 @@ app.post('/api/projects/:id/annotations', (req, res) => {
       author,
       text,
       timecode,
-      resolved: 0,
+      status: 0,
       created_at: new Date().toISOString()
     });
   });
@@ -278,6 +266,33 @@ app.delete('/api/annotations/:id', (req, res) => {
   });
 });
 
+// NEW: Update annotation status (0=pending, 1=accepted, 2=rejected)
+app.patch('/api/annotations/:id/status', (req, res) => {
+  const { id } = req.params;
+  const { status } = req.body;
+
+  if (status === undefined || ![0, 1, 2].includes(status)) {
+    return res.status(400).json({ error: 'Invalid status (0=pending, 1=accepted, 2=rejected)' });
+  }
+
+  db.run('UPDATE annotations SET status = ? WHERE id = ?', [status, id], function(err) {
+    if (err) {
+      console.error(err);
+      return res.status(500).json({ error: 'Failed to update annotation' });
+    }
+
+    if (this.changes === 0) {
+      return res.status(404).json({ error: 'Annotation not found' });
+    }
+
+    res.json({ 
+      id: id,
+      status: status
+    });
+  });
+});
+
+// LEGACY: Keep resolve endpoint for backward compatibility
 app.patch('/api/annotations/:id/resolve', (req, res) => {
   const { id } = req.params;
   const { resolved } = req.body;
@@ -286,7 +301,7 @@ app.patch('/api/annotations/:id/resolve', (req, res) => {
     return res.status(400).json({ error: 'Resolved status is required' });
   }
 
-  db.run('UPDATE annotations SET resolved = ? WHERE id = ?', [resolved ? 1 : 0, id], function(err) {
+  db.run('UPDATE annotations SET status = ? WHERE id = ?', [resolved ? 1 : 0, id], function(err) {
     if (err) {
       console.error(err);
       return res.status(500).json({ error: 'Failed to update annotation' });
@@ -303,8 +318,6 @@ app.patch('/api/annotations/:id/resolve', (req, res) => {
   });
 });
 
-// ===== STATIC ROUTES =====
-
 app.get('/admin', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'admin.html'));
 });
@@ -317,7 +330,6 @@ app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// Catch-all for any unmatched routes
 app.use((req, res) => {
   res.status(404).json({ error: 'Not found' });
 });
