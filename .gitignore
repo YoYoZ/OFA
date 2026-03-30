@@ -2,8 +2,6 @@ node_modules/
 npm-debug.log*
 data/*.db
 data/*.db-*
-.env
-.env.local
 logs/
 *.log
 .DS_Store
