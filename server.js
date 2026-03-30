@@ -27,13 +27,24 @@ app.use(express.static(path.join(__dirname, 'public')));
 const db = new sqlite3.Database('./data/annotations.db', (err) => {
   if (err) {
     console.error('Error opening database:', err.message);
+    process.exit(1); // нет смысла стартовать без БД
   } else {
     console.log('Connected to SQLite database');
-    initDatabase();
+    // ✅ FIX: запускаем сервер ТОЛЬКО после инициализации БД
+    initDatabase(() => {
+      app.listen(PORT, () => {
+        console.log(`✅ Server running on http://localhost:${PORT}`);
+        console.log(`🛠️ Admin panel: http://localhost:${PORT}/admin`);
+        console.log(`📚 API ready at http://localhost:${PORT}/api`);
+        if (!process.env.ADMIN_PASSWORD) {
+          console.warn('⚠️ WARNING: ADMIN_PASSWORD not set! Default password: CHANGE_ME');
+        }
+      });
+    });
   }
 });
 
-function initDatabase() {
+function initDatabase(callback) {
   db.serialize(() => {
     db.run(`CREATE TABLE IF NOT EXISTS projects (
       id TEXT PRIMARY KEY,
@@ -52,13 +63,14 @@ function initDatabase() {
       FOREIGN KEY (project_id) REFERENCES projects (id)
     )`);
 
+    // ✅ FIX: правильная проверка сообщения об ошибке SQLite
     db.run(`ALTER TABLE annotations ADD COLUMN status INTEGER DEFAULT 0`, (err) => {
-      if (err && !err.message.includes('duplicate column')) {
+      if (err && !err.message.includes('already has a column named')) {
         console.error('Migration error:', err);
       }
+      console.log('Database tables initialized');
+      if (callback) callback();
     });
-
-    console.log('Database tables initialized');
   });
 }
 
@@ -76,7 +88,10 @@ app.post('/api/admin/login', (req, res) => {
     return res.status(400).json({ error: 'Password required' });
   }
 
-  if (password === process.env.ADMIN_PASSWORD) {
+  // ✅ FIX: fallback на 'CHANGE_ME' если ADMIN_PASSWORD не задан
+  const adminPassword = process.env.ADMIN_PASSWORD || 'CHANGE_ME';
+
+  if (password === adminPassword) {
     req.session.isAdmin = true;
     res.json({ success: true });
   } else {
@@ -266,7 +281,6 @@ app.delete('/api/annotations/:id', (req, res) => {
   });
 });
 
-// NEW: Update annotation status (0=pending, 1=accepted, 2=rejected)
 app.patch('/api/annotations/:id/status', (req, res) => {
   const { id } = req.params;
   const { status } = req.body;
@@ -285,10 +299,7 @@ app.patch('/api/annotations/:id/status', (req, res) => {
       return res.status(404).json({ error: 'Annotation not found' });
     }
 
-    res.json({ 
-      id: id,
-      status: status
-    });
+    res.json({ id, status });
   });
 });
 
@@ -311,10 +322,7 @@ app.patch('/api/annotations/:id/resolve', (req, res) => {
       return res.status(404).json({ error: 'Annotation not found' });
     }
 
-    res.json({ 
-      id: id,
-      resolved: resolved ? 1 : 0
-    });
+    res.json({ id, resolved: resolved ? 1 : 0 });
   });
 });
 
@@ -332,15 +340,6 @@ app.get('/', (req, res) => {
 
 app.use((req, res) => {
   res.status(404).json({ error: 'Not found' });
-});
-
-app.listen(PORT, () => {
-  console.log(`✅ Server running on http://localhost:${PORT}`);
-  console.log(`🛠️ Admin panel: http://localhost:${PORT}/admin`);
-  console.log(`📚 API ready at http://localhost:${PORT}/api`);
-  if (!process.env.ADMIN_PASSWORD) {
-    console.warn('⚠️ WARNING: ADMIN_PASSWORD not set in .env file!');
-  }
 });
 
 process.on('SIGINT', () => {
