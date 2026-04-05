@@ -36,7 +36,7 @@ Perfect for **video reviews**, **tutorials**, **team feedback**, and **collabora
 
 ```bash
 # Clone the repository
-git clone https://github.com/yoyoz/OFA
+git clone https://github.com/yoyoz/OFA.git
 cd OFA
 
 # Edit .env file with admin password
@@ -53,7 +53,7 @@ Access at: **http://localhost:3000**
 
 ```bash
 # Clone the repository
-git clone https://github.com/yoyoz/OFA
+git clone https://github.com/yoyoz/OFA.git
 cd OFA
 
 # Install dependencies
@@ -315,7 +315,7 @@ Edit `public/project.js`:
 ssh user@your-server
 
 # Clone repo
-git clone https://github.com/yoyoz/OFA
+git clone https://github.com/yoyoz/OFA.git
 cd OFA
 
 # Setup with Docker
