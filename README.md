@@ -36,11 +36,11 @@ Perfect for **video reviews**, **tutorials**, **team feedback**, and **collabora
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/open-frame-annotator.git
-cd open-frame-annotator
+git clone https://github.com/yoyoz/OFA
+cd OFA
 
-# Create .env file with admin password
-echo "ADMIN_PASSWORD=your_secure_password" > .env
+# Edit .env file with admin password
+nano .env
 Default password is CHANGE_ME
 
 # Start with Docker
@@ -53,8 +53,8 @@ Access at: **http://localhost:3000**
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/open-frame-annotator.git
-cd open-frame-annotator
+git clone https://github.com/yoyoz/OFA
+cd OFA
 
 # Install dependencies
 npm install
@@ -308,25 +308,6 @@ Edit `public/project.js`:
 
 ## 🚢 Deployment
 
-### Heroku
-
-```bash
-# Install Heroku CLI
-heroku login
-
-# Create app
-heroku create your-app-name
-
-# Set environment variable
-heroku config:set ADMIN_PASSWORD=your_password
-
-# Deploy
-git push heroku main
-
-# Open
-heroku open
-```
-
 ### DigitalOcean / VPS
 
 ```bash
@@ -334,8 +315,8 @@ heroku open
 ssh user@your-server
 
 # Clone repo
-git clone https://github.com/yourusername/open-frame-annotator.git
-cd open-frame-annotator
+git clone https://github.com/yoyoz/OFA
+cd OFA
 
 # Setup with Docker
 echo "ADMIN_PASSWORD=your_password" > .env
@@ -382,7 +363,7 @@ Contributions are welcome! Here's how:
 
 ```bash
 # Clone your fork
-git clone https://github.com/YoYoZ/open-frame-annotator.git
+git clone https://github.com/YoYoZ/OFA
 
 # Install dependencies
 npm install
