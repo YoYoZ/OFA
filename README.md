@@ -3,9 +3,9 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Node.js](https://img.shields.io/badge/Node.js-v18+-green)](https://nodejs.org/)
 
-**Open Frame Annotator** is an open-source tool for collaborative YouTube video annotation. Create projects from YouTube videos, add time-stamped comments, mark them as resolved, and manage everything through a secure admin panel.
+**Open Frame Annotator** is an open-source tool for collaborative YouTube video annotation. Create a project from any YouTube video, invite your team to leave time-stamped comments, reply in threads, tag issues by category, and export everything to Premiere Pro markers or a printable PDF report.
 
-Perfect for **video reviews**, **tutorials**, **team feedback**, and **collaborative editing workflows**.
+Perfect for **video reviews**, **editorial feedback**, **client approvals**, and **team QA workflows**.
 
 If it saves you time, [☕ buy me a coffee](https://base.monobank.ua/4QTZuQ2Q8UfjJF) — it keeps the project going.
 
@@ -13,14 +13,24 @@ If it saves you time, [☕ buy me a coffee](https://base.monobank.ua/4QTZuQ2Q8Uf
 
 ## ✨ Features
 
-- 🎥 **YouTube Integration**: Paste any YouTube URL to create a project with embedded player
-- ⏱️ **Time-Stamped Annotations**: Add comments at specific video timestamps with author names
-- ✅ **Resolved Status**: Mark comments as "Accepted" (green)
-- 🎯 **Smart Timeline Clustering**: Multiple nearby annotations cluster together; hover to expand
-- 🛠️ **Secure Admin Panel**: Password-protected admin interface to view/delete projects and statistics
-- 🔊 **Audio Feedback**: Subtle bell sound for resolved comments, trash sound for deletions
-- 🌙 **Dark Theme**: Responsive design, mobile-friendly interface
-- 💾 **SQLite Database**: No external database required, everything stored locally
+| Feature | Details |
+|---|---|
+| 🎥 **YouTube Integration** | Paste any YouTube URL — public or unlisted — to embed the video |
+| ⏱️ **Time-Stamped Comments** | Annotate at any timestamp; author name is free-text (no accounts needed) |
+| 💬 **Threaded Replies** | Reply directly to any comment; threads collapse cleanly in the sidebar |
+| 🏷️ **Custom Tags** | Define up to 8 colour-coded tags per project (e.g. *color*, *audio*, *pacing*) |
+| ✅ **Review Status** | Mark each comment Accepted ✓, Rejected ✗, or leave it Pending ◯ |
+| 📊 **Progress Indicator** | Live "X / Y reviewed" counter updates as you work through comments |
+| 🎯 **Timeline Clustering** | Nearby markers merge into clusters; hover to expand individual items |
+| ⚡ **Real-Time Collaboration** | All connected viewers see new comments and status changes instantly via WebSocket |
+| ⌨️ **Keyboard Shortcuts** | Space, arrow keys, and `A` so you never have to leave the keyboard |
+| 📄 **PDF Report** | One-click printable report with thumbnail, stats, and full comment table |
+| 🎞️ **Premiere Pro CSV Export** | Download markers as CSV with frame-accurate timecodes; built-in import tutorial |
+| 🔒 **Edit Tokens** | Delete-your-own-comment system without user accounts |
+| 🛠️ **Admin Panel** | Password-protected panel for viewing stats and deleting projects |
+| 🔊 **Audio Feedback** | Subtle sounds on accept and delete actions |
+| 🌙 **Dark Theme** | Responsive dark UI, print-optimised report |
+| 💾 **SQLite** | Zero external database — everything lives in a single file |
 
 ---
 
@@ -28,44 +38,35 @@ If it saves you time, [☕ buy me a coffee](https://base.monobank.ua/4QTZuQ2Q8Uf
 
 ### Prerequisites
 
-- **Node.js** 18+ ([Download](https://nodejs.org/))
-- **Docker** (optional, recommended for easy setup)
-- **SQLite** (built-in, no installation needed)
+- **Docker + Docker Compose** (recommended)  
+  or **Node.js 18+** for a bare-metal run
 
-### Installation
-
-#### Option 1: Docker (Recommended)
+### Option 1: Docker (Recommended)
 
 ```bash
-# Clone the repository
-git clone https://github.com/yoyoz/OFA.git
+git clone https://github.com/YoYoZ/OFA.git
 cd OFA
 
-# Edit .env file with admin password
-nano .env
-Default password is CHANGE_ME
+# Set your admin password (default is CHANGE_ME — change it)
+echo "ADMIN_PASSWORD=your_secure_password" > .env
 
-# Start with Docker
 docker-compose up --build
 ```
 
+`npm install` runs automatically inside the Docker build step — you do not need to run it manually.
+
 Access at: **http://localhost:3000**
 
-#### Option 2: Node.js
+### Option 2: Node.js
 
 ```bash
-# Clone the repository
-git clone https://github.com/yoyoz/OFA.git
+git clone https://github.com/YoYoZ/OFA.git
 cd OFA
 
-# Install dependencies
 npm install
 
-# Create .env file
 echo "ADMIN_PASSWORD=your_secure_password" > .env
-Default password is CHANGE_ME
 
-# Start the server
 npm start
 ```
 
@@ -77,261 +78,293 @@ Access at: **http://localhost:3000**
 
 ### 1. Create a Project
 
-1. Go to the homepage: `http://localhost:3000`
-2. Paste a YouTube URL (e.g., `https://youtu.be/dQw4w9WgXcQ`)
-3. Click **"Create Project"**
-4. Share the unique project link: `http://localhost:3000/project/{unique-id}`
+1. Open `http://localhost:3000`
+2. Fill in:
+   - **Project Title** *(required)* — shown in the header and PDF report
+   - **YouTube URL** *(required)* — public or unlisted link
+   - **Description** *(optional)* — a brief note for reviewers
+   - **Custom Tags** *(optional)* — comma-separated list, max 8 (e.g. `color, audio, pacing, continuity`)
+3. Click **Create Project**
+4. Copy the unique share link and send it to your team
 
 ### 2. Annotate the Video
 
 1. Open the project link
-2. Play the video and pause at the timestamp you want to comment on
+2. Play the video and pause at the moment you want to comment on
 3. Enter your name and comment text
-4. Click **"Add at [timestamp]"** button
-5. The timeline shows markers:
-   - 🔴 **Red** = Unresolved comment
-   - 🟢 **Green** = Accepted/Resolved comment
-   - 🟡 **Yellow** = Mixed (cluster with both types)
-6. Click markers to jump to that timestamp
-7. Hover over clustered markers to expand them
+4. Optionally select one or more tags
+5. Click **"Add at [timestamp]"**
 
-### 3. Manage Comments
+Timeline marker colours:
+- 🔴 **Red** — pending comment
+- 🟢 **Green** — accepted comment
+- 🟡 **Yellow** — cluster with mixed statuses
 
-- **Delete**: Click 🗑️ button next to any comment
-- **Accept/Resolve**: Click ✓ button to mark as accepted (plays bell sound 🔔)
-- **Timeline Navigation**: Click any marker to seek to that timestamp
+Click any marker to jump to that timestamp. Hover over a cluster to see individual entries.
 
-### 4. Admin Panel
+### 3. Reply to Comments
 
-1. Go to: `http://localhost:3000/admin`
+Click **Reply** under any comment to open an inline reply form. Replies are threaded under the parent comment and carry the same timecode.
+
+### 4. Review Comments
+
+- **Accept** — click ✓ to mark a comment as accepted (plays a bell tone)
+- **Reject** — click ✗ to mark as rejected
+- **Delete** — click 🗑️ to delete (you can only delete comments you created in the current browser session; see [Edit Tokens](#-edit-tokens))
+
+The progress bar shows **"X / Y reviewed"** (accepted + rejected out of total root comments).
+
+### 5. Export
+
+**PDF Report**  
+Click **📄 Report** in the top bar. The report page shows the video thumbnail, project metadata, stats summary, and a full comment table including replies. Use your browser's **Print → Save as PDF** to export.
+
+**Premiere Pro CSV**  
+Click **⬇ Export Markers**, choose the frame rate matching your Premiere sequence, and click **Download CSV**. Follow the built-in step-by-step tutorial to import into Adobe Premiere Pro or DaVinci Resolve.
+
+### 6. Keyboard Shortcuts
+
+| Key | Action |
+|---|---|
+| `Space` | Play / Pause |
+| `←` / `→` | Seek ±5 seconds |
+| `Shift+←` / `Shift+→` | Seek ±10 seconds |
+| `A` | Focus the comment text field |
+| `Esc` | Close export modal / close open reply forms |
+
+Shortcuts are disabled when focus is inside any text input.
+
+### 7. Admin Panel
+
+1. Go to `http://localhost:3000/admin`
 2. Enter the password from your `.env` file
-3. View:
-   - **Total projects** and **total comments** statistics
-   - **List of all projects** with YouTube URLs and comment counts
-   - **Delete projects** (removes project + all comments)
-4. Session lasts **24 hours**
+3. View total project and comment counts, list all projects, and delete any project (cascades to all comments)
+
+Session lasts **24 hours**.
 
 ---
 
 ## 📁 Project Structure
 
 ```
-open-frame-annotator/
-├── public/              # Static files served to browser
-│   ├── index.html       # Homepage (create project)
+OFA/
+├── public/
+│   ├── index.html       # Homepage — create new project
 │   ├── project.html     # Annotation interface
+│   ├── report.html      # Printable PDF report page
 │   ├── admin.html       # Admin panel
-│   ├── project.js       # Client-side logic
+│   ├── project.js       # All client-side logic
 │   └── style.css        # Styles
-├── server.js            # Express server + API routes
-├── data/                # SQLite database folder
-│   └── annotations.db   # Database file (auto-created)
-├── .env                 # Environment variables (GITIGNORED!)
-├── .gitignore           # Git ignore rules
-├── package.json         # Node.js dependencies
-├── docker-compose.yml   # Docker configuration
-└── README.md            # This file
+├── server.js            # Express + Socket.io server and API routes
+├── data/
+│   └── annotations.db   # SQLite database (auto-created on first run)
+├── .env                 # Environment variables (gitignored)
+├── .gitignore
+├── package.json
+├── docker-compose.yml
+└── README.md
 ```
 
 ---
 
-## 🔌 API Endpoints
+## 🔌 API Reference
 
-All API routes are under `/api` and use JSON for requests/responses.
+All routes use JSON unless otherwise noted.
 
 ### Projects
 
-**Create Project**
+**Create project**
 ```http
 POST /api/projects
 Content-Type: application/json
 
 {
-  "youtube_url": "https://youtu.be/dQw4w9WgXcQ"
+  "youtube_url": "https://youtu.be/dQw4w9WgXcQ",
+  "title": "Brand Ad — Cut 3",
+  "description": "Final round of reviews before delivery",
+  "tags_config": "color, audio, pacing, continuity"
 }
 
-Response:
+→ 201
 {
-  "project_id": "uuid-here",
-  "share_url": "http://localhost:3000/project/uuid-here"
+  "project_id": "uuid",
+  "share_url": "http://localhost:3000/project/uuid"
 }
 ```
 
-**Get Project**
+**Get project + annotations**
 ```http
 GET /api/projects/:id
 
-Response:
+→ 200
 {
   "project": {
     "id": "uuid",
     "youtube_url": "...",
-    "created_at": "2025-10-29T..."
+    "title": "...",
+    "description": "...",
+    "tags_config": "[\"color\",\"audio\"]",
+    "created_at": "2025-10-29T12:00:00Z"
   },
-  "annotations": [...]
+  "annotations": [
+    {
+      "id": "uuid",
+      "project_id": "uuid",
+      "parent_id": null,
+      "author": "Alice",
+      "text": "Colour grade feels warm here",
+      "timecode": 42.5,
+      "status": 0,
+      "tags": "[\"color\"]",
+      "created_at": "..."
+    }
+  ]
 }
 ```
 
+`status`: `0` = pending, `1` = accepted, `2` = rejected  
+`parent_id`: `null` for root comments, parent annotation UUID for replies
+
 ### Annotations
 
-**Add Annotation**
+**Add annotation (or reply)**
 ```http
 POST /api/projects/:id/annotations
 Content-Type: application/json
 
 {
-  "author": "John Doe",
-  "text": "Great transition here!",
-  "timecode": 123.45
+  "author": "Alice",
+  "text": "Colour grade feels warm here",
+  "timecode": 42.5,
+  "tags": ["color"],
+  "parent_id": null         // omit or null for root; UUID for reply
+}
+
+→ 201
+{
+  "id": "uuid",
+  "edit_token": "uuid"      // store this — required to delete the annotation later
 }
 ```
 
-**Delete Annotation**
+**Set review status**
+```http
+PATCH /api/annotations/:id/status
+Content-Type: application/json
+
+{ "status": 1 }   // 0 = pending, 1 = accepted, 2 = rejected
+```
+
+**Delete annotation**
 ```http
 DELETE /api/annotations/:id
-```
-
-**Toggle Resolved Status**
-```http
-PATCH /api/annotations/:id/resolve
 Content-Type: application/json
 
-{
-  "resolved": 1  // 1 = resolved, 0 = unresolved
-}
+{ "edit_token": "uuid" }   // the token returned when the annotation was created
 ```
 
-### Admin (Password-Protected)
+Deleting a root annotation automatically deletes all its replies. The server emits `thread:deleted` (root) or `annotation:deleted` (reply) via WebSocket to all connected clients.
 
-**Login**
+**Export markers (Premiere Pro CSV)**
 ```http
-POST /api/admin/login
-Content-Type: application/json
+GET /api/projects/:id/export/premiere?fps=24
 
-{
-  "password": "your_password"
-}
+→ 200 text/csv
+Name,Description,In,Out,Duration,Comment
+...
 ```
 
-**List Projects**
-```http
-GET /api/admin/projects
+`fps` accepts: `23.976`, `24`, `25`, `29.97`, `30`, `48`, `50`, `59.94`, `60`
 
-Response:
-{
-  "projects": [...],
-  "totalAnnotations": 42
-}
-```
+### Admin (session-protected)
 
-**Delete Project**
 ```http
+POST /api/admin/login        { "password": "..." }
+GET  /api/admin/projects     → { projects: [...], totalAnnotations: N }
 DELETE /api/admin/projects/:id
-```
-
-**Logout**
-```http
 POST /api/admin/logout
 ```
+
+Login is rate-limited to **10 attempts per 15 minutes** per IP.
+
+---
+
+## ⚡ Real-Time Collaboration
+
+Socket.io (v4) handles live updates. Every client joins a room keyed to the project UUID on page load. The server broadcasts to the room on every write:
+
+| Event | Payload | Trigger |
+|---|---|---|
+| `annotation:created` | full annotation object | new comment or reply added |
+| `annotation:deleted` | `{ id }` | a reply was deleted |
+| `thread:deleted` | `{ id }` | a root comment (and its replies) was deleted |
+| `annotation:status` | `{ id, status }` | review status changed |
+
+Clients deduplicate `annotation:created` events to avoid double-rendering their own submissions.
 
 ---
 
 ## 🔒 Security
 
+### Edit Tokens
+
+Comments can be deleted without user accounts using a one-time **edit token**. When an annotation is created, the server generates a UUID token and returns it **once** in the API response. The browser stores it in `localStorage` under `annotation_tokens`. The delete button only appears for comments whose token is present in the current browser's storage. The token is required in the DELETE request body.
+
+Legacy annotations (created before tokens were introduced) have a `NULL` token and can be deleted freely — this preserves backwards compatibility.
+
 ### Admin Authentication
 
-- **Password Storage**: Admin password is stored in `.env` file (server-side only)
-- **Session Management**: Uses `express-session` with httpOnly cookies
-- **Session Duration**: 24 hours, configurable in `server.js`
-- **Middleware Protection**: All admin routes are protected by `checkAdminAuth` middleware
+- Password compared with `crypto.timingSafeEqual` (prevents timing attacks)
+- `express-session` with `httpOnly` cookies, 24-hour TTL
+- Rate limiter: 10 login attempts per 15 minutes per IP, in-memory
 
-### Best Practices
+### Input Validation
 
-✅ **For Production:**
-- Use HTTPS (nginx reverse proxy + Let's Encrypt)
-- Set strong `SESSION_SECRET` in `.env`
-- Enable `cookie.secure: true` for HTTPS-only cookies
-- Add rate limiting for `/api/admin/login` route
-- Restrict admin panel access by IP if possible
+- YouTube URL validated against a strict regex before storing
+- All user text HTML-escaped before rendering (no `innerHTML` with raw data)
+- `tags_config` limited to 8 tags, comma-parsed and serialised as JSON
 
-✅ **Data Validation:**
-- Input sanitization in API routes
-- HTML escaping in frontend
-- SQLite foreign keys for data integrity
+### Production Checklist
+
+- [ ] Set a strong `ADMIN_PASSWORD` and `SESSION_SECRET` in `.env`
+- [ ] Run behind HTTPS (nginx + Let's Encrypt)
+- [ ] Enable `cookie.secure: true` in `server.js` when behind HTTPS
+- [ ] Consider restricting `/admin` by IP in nginx
 
 ---
 
 ## ⚙️ Configuration
 
-### Environment Variables (`.env`)
+**`.env` file**
 
 ```env
-# Required: Admin panel password (defaults to CHANGE_ME)
-ADMIN_PASSWORD=your_secure_password_here
+# Required — admin panel password (default: CHANGE_ME)
+ADMIN_PASSWORD=your_secure_password
 
-# Optional: Session secret (defaults to auto-generated)
-SESSION_SECRET=your_session_secret_key
+# Optional — session signing secret (auto-generated if absent)
+SESSION_SECRET=a_long_random_string
 
-# Optional: Server port (defaults to 3000)
+# Optional — port (default: 3000)
 PORT=3000
 ```
-
-### Customization
-
-**Change Admin Password:**
-```bash
-# Edit .env file
-ADMIN_PASSWORD=new_password
-
-# Restart server
-docker-compose restart
-# or
-npm start
-```
-
-**Adjust Session Duration:**
-Edit `server.js`, line ~30:
-```javascript
-cookie: {
-  maxAge: 24 * 60 * 60 * 1000, // 24 hours → change this
-  httpOnly: true
-}
-```
-
-**Modify Theme/Styles:**
-Edit `public/style.css` to customize colors, fonts, layout.
-
-**Adjust Sound Volumes:**
-Edit `public/project.js`:
-- Line ~33: `gainNode.gain.setValueAtTime(0.09, ...)` for bell volume
-- Line ~50: `gainNode.gain.setValueAtTime(0.4, ...)` for trash sound volume
 
 ---
 
 ## 🚢 Deployment
 
-### DigitalOcean / VPS
+### Docker on a VPS
 
 ```bash
-# SSH into server
 ssh user@your-server
-
-# Clone repo
-git clone https://github.com/yoyoz/OFA.git
+git clone https://github.com/YoYoZ/OFA.git
 cd OFA
-
-# Setup with Docker
 echo "ADMIN_PASSWORD=your_password" > .env
-docker-compose up -d
-
-# Or with Node.js + PM2
-npm install
-npm install -g pm2
-pm2 start server.js --name annotator
-pm2 save
+docker-compose up -d --build
 ```
 
-### Nginx Reverse Proxy (Production)
+### Nginx Reverse Proxy
+
+Socket.io requires WebSocket upgrade headers. Make sure your nginx config includes them:
 
 ```nginx
 server {
@@ -342,43 +375,50 @@ server {
         proxy_pass http://localhost:3000;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection 'upgrade';
+        proxy_set_header Connection "upgrade";
         proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
         proxy_cache_bypass $http_upgrade;
     }
 }
+```
+
+Without `Upgrade` / `Connection` headers, real-time collaboration will fall back to HTTP long-polling and may not work at all depending on your proxy settings.
+
+### PM2 (without Docker)
+
+```bash
+npm install
+npm install -g pm2
+pm2 start server.js --name ofa
+pm2 save
+pm2 startup
 ```
 
 ---
 
 ## 🤝 Contributing
 
-Contributions are welcome! Here's how:
+1. Fork the repository
+2. Create a feature branch: `git checkout -b feature/my-feature`
+3. Commit your changes: `git commit -m 'Add my feature'`
+4. Push to the branch: `git push origin feature/my-feature`
+5. Open a Pull Request
 
-1. **Fork** the repository
-2. Create a **feature branch**: `git checkout -b feature/amazing-feature`
-3. **Commit** your changes: `git commit -m 'Add amazing feature'`
-4. **Push** to the branch: `git push origin feature/amazing-feature`
-5. Open a **Pull Request**
-
-### Development Setup
+**Development setup:**
 
 ```bash
-# Clone your fork
-git clone https://github.com/YoYoZ/OFA
-
-# Install dependencies
+git clone https://github.com/YoYoZ/OFA.git
+cd OFA
 npm install
-
-# Start in development mode (with nodemon)
-npm run dev
+npm run dev   # starts with nodemon
 ```
 
 ---
 
 ## 📝 License
 
-This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) file for details.
+MIT — see [LICENSE](LICENSE).
 
 ---
 
@@ -392,24 +432,11 @@ This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) 
 
 ## 🙏 Acknowledgments
 
-- Built with [Express.js](https://expressjs.com/)
-- Powered by [SQLite](https://www.sqlite.org/)
-- YouTube integration via [YouTube IFrame API](https://developers.google.com/youtube/iframe_api_reference)
-- Session management with [express-session](https://github.com/expressjs/session)
-
----
-
-## 🗺️ Roadmap
-
-- [ ] Add user authentication (multiple users, not just admin)
-- [ ] Export annotations to CSV/JSON
-- [ ] Annotation threading (replies to comments)
-- [ ] Real-time collaboration (WebSockets)
-- [ ] Video frame snapshots for annotations
-- [ ] Dark/Light theme toggle
-- [ ] i18n (multi-language support)
-- [ ] Docker Compose with nginx
-- [ ] Mobile app (React Native)
+- [Express.js](https://expressjs.com/) — web framework
+- [Socket.io](https://socket.io/) — real-time WebSocket layer
+- [SQLite3](https://www.sqlite.org/) — embedded database
+- [YouTube IFrame API](https://developers.google.com/youtube/iframe_api_reference) — video player
+- [express-session](https://github.com/expressjs/session) — admin session management
 
 ---
 

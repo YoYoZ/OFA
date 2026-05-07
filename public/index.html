@@ -15,12 +15,29 @@
 
         <div class="create-project">
             <h2>Create New Project</h2>
-            <div class="input-group">
-                <input type="text" id="youtubeUrl" placeholder="Paste YouTube link here..." />
+            <div class="create-form">
+                <div class="form-field">
+                    <label for="projectTitle">Project Title <span class="required">*</span></label>
+                    <input type="text" id="projectTitle" placeholder="e.g. Brand Ad — Cut 3" maxlength="100" />
+                </div>
+                <div class="form-field">
+                    <label for="youtubeUrl">YouTube URL <span class="required">*</span></label>
+                    <input type="text" id="youtubeUrl" placeholder="https://youtube.com/watch?v=..." maxlength="2048" />
+                </div>
+                <div class="form-field">
+                    <label for="projectDescription">Description <span class="optional">(optional)</span></label>
+                    <input type="text" id="projectDescription" placeholder="Brief note for reviewers..." maxlength="500" />
+                </div>
+                <div class="form-field">
+                    <label for="projectTags">Custom Tags <span class="optional">(optional, comma-separated)</span></label>
+                    <input type="text" id="projectTags" placeholder="e.g. color, audio, pacing, continuity" maxlength="200" />
+                    <p class="field-hint">Tags let reviewers categorise each comment. Max 8 tags.</p>
+                </div>
                 <button onclick="createProject()">Create Project</button>
             </div>
+
             <div id="result" style="display: none;">
-                <h3>✅ Project created successfully!</h3>
+                <h3>✅ Project created!</h3>
                 <div class="share-url">
                     <input type="text" id="shareUrl" readonly />
                     <button onclick="copyUrl()">Copy Link</button>
@@ -32,49 +49,60 @@
 
     <script>
         async function createProject() {
+            const title = document.getElementById('projectTitle').value.trim();
             const url = document.getElementById('youtubeUrl').value.trim();
+            const description = document.getElementById('projectDescription').value.trim();
+            const tags = document.getElementById('projectTags').value.trim();
 
-            if (!url) {
-                alert('Please enter YouTube URL');
-                return;
-            }
+            if (!title) { alert('Please enter a project title'); return; }
+            if (!url) { alert('Please enter a YouTube URL'); return; }
 
             try {
                 const response = await fetch('/api/projects', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({ youtube_url: url })
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        youtube_url: url,
+                        title,
+                        description: description || undefined,
+                        tags_config: tags || undefined
+                    })
                 });
 
                 if (!response.ok) {
-                    throw new Error('Failed to create project');
+                    const err = await response.json().catch(() => ({}));
+                    throw new Error(err.error || 'Failed to create project');
                 }
 
                 const data = await response.json();
-
                 document.getElementById('shareUrl').value = data.share_url;
                 document.getElementById('openProject').href = data.share_url;
                 document.getElementById('result').style.display = 'block';
                 document.getElementById('youtubeUrl').value = '';
+                document.getElementById('projectTitle').value = '';
+                document.getElementById('projectDescription').value = '';
+                document.getElementById('projectTags').value = '';
             } catch (error) {
-                console.error('Error:', error);
-                alert('Error creating project. Please try again.');
+                alert(error.message || 'Error creating project. Please try again.');
             }
         }
 
         function copyUrl() {
-            const input = document.getElementById('shareUrl');
-            input.select();
-            document.execCommand('copy');
-            alert('Link copied to clipboard!');
+            const url = document.getElementById('shareUrl').value;
+            navigator.clipboard.writeText(url).then(() => {
+                const btn = document.querySelector('.share-url button');
+                const original = btn.textContent;
+                btn.textContent = 'Copied!';
+                setTimeout(() => { btn.textContent = original; }, 2000);
+            }).catch(() => {
+                const input = document.getElementById('shareUrl');
+                input.select();
+                document.execCommand('copy');
+            });
         }
 
-        document.getElementById('youtubeUrl').addEventListener('keypress', function(e) {
-            if (e.key === 'Enter') {
-                createProject();
-            }
+        document.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') createProject();
         });
     </script>
 </body>

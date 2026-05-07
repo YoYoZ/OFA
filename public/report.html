@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Report — Open Frame Annotator</title>
+    <style>
+        /* ── Screen styles (dark) ── */
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #1a1a1a;
+            color: #e0e0e0;
+            line-height: 1.5;
+        }
+
+        .page { max-width: 900px; margin: 0 auto; padding: 32px 24px 60px; }
+
+        /* Top bar */
+        .topbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 32px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid #333;
+        }
+
+        .topbar-left a {
+            color: #64b5f6;
+            text-decoration: none;
+            font-size: 0.88rem;
+        }
+
+        .print-btn {
+            padding: 8px 20px;
+            background: #64b5f6;
+            color: #1a1a1a;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 0.88rem;
+        }
+
+        .print-btn:hover { background: #42a5f5; }
+
+        /* Header */
+        .report-header {
+            display: grid;
+            grid-template-columns: 180px 1fr;
+            gap: 24px;
+            margin-bottom: 28px;
+            background: #2a2a2a;
+            border-radius: 10px;
+            padding: 20px;
+        }
+
+        .thumbnail {
+            width: 180px;
+            aspect-ratio: 16/9;
+            object-fit: cover;
+            border-radius: 6px;
+            background: #333;
+        }
+
+        .thumbnail-placeholder {
+            width: 180px;
+            aspect-ratio: 16/9;
+            background: #2a2a2a;
+            border: 2px dashed #3a3a3a;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #555;
+            font-size: 2rem;
+        }
+
+        .report-meta h1 {
+            font-size: 1.4rem;
+            color: #fff;
+            margin-bottom: 6px;
+        }
+
+        .report-meta .description {
+            color: #9e9e9e;
+            font-size: 0.88rem;
+            margin-bottom: 12px;
+        }
+
+        .report-meta .url a {
+            color: #64b5f6;
+            font-size: 0.82rem;
+            word-break: break-all;
+            text-decoration: none;
+        }
+
+        .report-meta .export-date {
+            margin-top: 8px;
+            font-size: 0.78rem;
+            color: #555;
+        }
+
+        /* Stats */
+        .stats {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 28px;
+        }
+
+        .stat-card {
+            flex: 1;
+            background: #2a2a2a;
+            border-radius: 8px;
+            padding: 14px 16px;
+            text-align: center;
+        }
+
+        .stat-number { font-size: 1.8rem; font-weight: 700; color: #64b5f6; }
+        .stat-number.green  { color: #52b788; }
+        .stat-number.red    { color: #e74c3c; }
+        .stat-number.yellow { color: #ffd700; }
+        .stat-label  { font-size: 0.78rem; color: #9e9e9e; margin-top: 2px; }
+
+        /* Annotations table */
+        .section-title {
+            font-size: 1rem;
+            color: #fff;
+            margin-bottom: 12px;
+            font-weight: 600;
+        }
+
+        .annotations-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.85rem;
+        }
+
+        .annotations-table thead tr {
+            background: #2a2a2a;
+            border-bottom: 2px solid #3a3a3a;
+        }
+
+        .annotations-table th {
+            padding: 10px 12px;
+            text-align: left;
+            color: #9e9e9e;
+            font-weight: 600;
+            font-size: 0.78rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .annotations-table td {
+            padding: 10px 12px;
+            border-bottom: 1px solid #2a2a2a;
+            vertical-align: top;
+        }
+
+        .annotations-table tbody tr:hover { background: #222; }
+
+        .tc {
+            font-family: monospace;
+            color: #64b5f6;
+            white-space: nowrap;
+            font-size: 0.82rem;
+        }
+
+        .author-cell { color: #fff; font-weight: 500; white-space: nowrap; }
+
+        .text-cell { color: #e0e0e0; }
+
+        .reply-row td { background: #1e1e1e; }
+        .reply-row .author-cell { color: #9e9e9e; font-weight: 400; padding-left: 24px; }
+        .reply-row .author-cell::before { content: '↳ '; color: #444; }
+
+        .status-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 0.72rem;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+
+        .status-accepted { background: #1a3a2a; color: #52b788; }
+        .status-rejected { background: #3a1a1a; color: #e74c3c; }
+        .status-pending  { background: #2a2a1a; color: #ffd700; }
+
+        .tags-cell { display: flex; flex-wrap: wrap; gap: 4px; }
+        .tag-pill {
+            padding: 1px 7px;
+            border-radius: 8px;
+            font-size: 0.7rem;
+            font-weight: 600;
+            color: #1a1a1a;
+        }
+
+        .loading { text-align: center; padding: 60px; color: #555; font-size: 1.1rem; }
+        .error   { text-align: center; padding: 60px; color: #e74c3c; }
+
+        /* ── Print styles ── */
+        @media print {
+            body { background: #fff; color: #111; }
+
+            .topbar, .print-btn { display: none !important; }
+
+            .page { padding: 0; max-width: 100%; }
+
+            .report-header { background: #f5f5f5; border: 1px solid #ddd; color: #111; }
+            .report-meta h1 { color: #111; }
+            .report-meta .description { color: #555; }
+            .report-meta .url a { color: #1a6fa5; }
+            .report-meta .export-date { color: #999; }
+
+            .stat-card { background: #f5f5f5; border: 1px solid #ddd; }
+            .stat-number { color: #1a6fa5; }
+            .stat-number.green  { color: #2d6a4f; }
+            .stat-number.red    { color: #922b21; }
+            .stat-number.yellow { color: #9a7d0a; }
+            .stat-label { color: #555; }
+
+            .section-title { color: #111; }
+
+            .annotations-table thead tr { background: #f0f0f0; }
+            .annotations-table th { color: #555; }
+            .annotations-table td { border-bottom: 1px solid #eee; color: #111; }
+            .annotations-table tbody tr:hover { background: transparent; }
+
+            .reply-row td { background: #fafafa; }
+            .reply-row .author-cell { color: #555; }
+
+            .tc { color: #1a6fa5; }
+            .author-cell { color: #111; }
+            .text-cell { color: #333; }
+
+            .status-accepted { background: #e8f5e9; color: #2d6a4f; }
+            .status-rejected { background: #fde8e8; color: #922b21; }
+            .status-pending  { background: #fffde7; color: #9a7d0a; }
+
+            .tag-pill { border: 1px solid #ccc; color: #333; background: #f5f5f5 !important; }
+
+            .thumbnail-placeholder { border-color: #ddd; color: #ccc; }
+        }
+    </style>
+</head>
+<body>
+    <div class="page">
+        <div class="topbar no-print">
+            <div class="topbar-left">
+                <a id="backLink" href="#">← Back to project</a>
+            </div>
+            <button class="print-btn" onclick="window.print()">🖨 Print / Save as PDF</button>
+        </div>
+
+        <div id="content">
+            <div class="loading">Loading report…</div>
+        </div>
+    </div>
+
+    <script>
+        const TAG_PALETTE = ['#64b5f6','#52b788','#ffd700','#e74c3c','#9b59b6','#e67e22','#1abc9c','#e91e63'];
+        const projectId = window.location.pathname.split('/')[2];
+
+        document.getElementById('backLink').href = `/project/${projectId}`;
+
+        function tagColor(name, config) {
+            const idx = config.indexOf(name);
+            return TAG_PALETTE[(idx >= 0 ? idx : 0) % TAG_PALETTE.length];
+        }
+
+        function escapeHtml(text) {
+            const d = document.createElement('div');
+            d.textContent = String(text);
+            return d.innerHTML;
+        }
+
+        function formatTime(s) {
+            const m = Math.floor(s / 60), sec = Math.floor(s % 60);
+            return `${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`;
+        }
+
+        function extractVideoId(url) {
+            const patterns = [
+                /(?:youtube\.com\/watch\?v=)([^&]+)/,
+                /(?:youtube\.com\/embed\/)([^?]+)/,
+                /(?:youtu\.be\/)([^?]+)/,
+            ];
+            for (const p of patterns) { const m = url.match(p); if (m?.[1]) return m[1]; }
+            return null;
+        }
+
+        function statusBadge(status) {
+            if (status === 1) return `<span class="status-badge status-accepted">✓ Accepted</span>`;
+            if (status === 2) return `<span class="status-badge status-rejected">✗ Rejected</span>`;
+            return `<span class="status-badge status-pending">◯ Pending</span>`;
+        }
+
+        function tagPills(tagsJson, config) {
+            if (!tagsJson) return '';
+            let tags; try { tags = JSON.parse(tagsJson); } catch { return ''; }
+            if (!Array.isArray(tags) || !tags.length) return '';
+            return `<div class="tags-cell">${tags.map(t =>
+                `<span class="tag-pill" style="background:${tagColor(t, config)}">${escapeHtml(t)}</span>`
+            ).join('')}</div>`;
+        }
+
+        async function render() {
+            const content = document.getElementById('content');
+            try {
+                const res = await fetch(`/api/projects/${projectId}`);
+                if (!res.ok) throw new Error('Project not found');
+                const { project, annotations } = await res.json();
+
+                document.title = `${project.title || 'Report'} — Open Frame Annotator`;
+
+                const tagsConfig = project.tags_config ? JSON.parse(project.tags_config) : [];
+                const roots   = annotations.filter(a => !a.parent_id);
+                const replies = (id) => annotations.filter(a => a.parent_id === id);
+
+                const total    = roots.length;
+                const accepted = roots.filter(a => a.status === 1).length;
+                const rejected = roots.filter(a => a.status === 2).length;
+                const pending  = roots.filter(a => !a.status).length;
+
+                const videoId = extractVideoId(project.youtube_url);
+                const thumbnailHtml = videoId
+                    ? `<img class="thumbnail" src="https://img.youtube.com/vi/${videoId}/mqdefault.jpg" alt="Video thumbnail" onerror="this.style.display='none'">`
+                    : `<div class="thumbnail-placeholder">🎬</div>`;
+
+                const rowsHtml = roots.map(a => {
+                    const threadReplies = replies(a.id);
+                    const rootRow = `
+                        <tr>
+                            <td class="tc">${escapeHtml(formatTime(a.timecode))}</td>
+                            <td class="author-cell">${escapeHtml(a.author)}</td>
+                            <td class="text-cell">${escapeHtml(a.text)}</td>
+                            <td>${tagPills(a.tags, tagsConfig)}</td>
+                            <td>${statusBadge(a.status ?? 0)}</td>
+                        </tr>
+                    `;
+                    const replyRows = threadReplies.map(r => `
+                        <tr class="reply-row">
+                            <td class="tc"></td>
+                            <td class="author-cell">${escapeHtml(r.author)}</td>
+                            <td class="text-cell" colspan="2">${escapeHtml(r.text)}</td>
+                            <td></td>
+                        </tr>
+                    `).join('');
+                    return rootRow + replyRows;
+                }).join('');
+
+                content.innerHTML = `
+                    <div class="report-header">
+                        ${thumbnailHtml}
+                        <div class="report-meta">
+                            <h1>${escapeHtml(project.title || 'Untitled Project')}</h1>
+                            ${project.description ? `<p class="description">${escapeHtml(project.description)}</p>` : ''}
+                            <p class="url"><a href="${escapeHtml(project.youtube_url)}" target="_blank">${escapeHtml(project.youtube_url)}</a></p>
+                            <p class="export-date">Exported ${new Date().toLocaleString('en-US', { dateStyle: 'long', timeStyle: 'short' })}</p>
+                        </div>
+                    </div>
+
+                    <div class="stats">
+                        <div class="stat-card">
+                            <div class="stat-number">${total}</div>
+                            <div class="stat-label">Total Comments</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-number green">${accepted}</div>
+                            <div class="stat-label">Accepted</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-number red">${rejected}</div>
+                            <div class="stat-label">Rejected</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-number yellow">${pending}</div>
+                            <div class="stat-label">Pending</div>
+                        </div>
+                    </div>
+
+                    <p class="section-title">Comments</p>
+                    <table class="annotations-table">
+                        <thead>
+                            <tr>
+                                <th>Time</th>
+                                <th>Author</th>
+                                <th>Comment</th>
+                                <th>Tags</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>${rowsHtml || '<tr><td colspan="5" style="text-align:center;color:#555;padding:24px;">No comments yet</td></tr>'}</tbody>
+                    </table>
+                `;
+            } catch (err) {
+                content.innerHTML = `<div class="error">Error loading report: ${escapeHtml(err.message)}</div>`;
+            }
+        }
+
+        render();
+    </script>
+</body>
+</html>

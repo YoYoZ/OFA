@@ -9,14 +9,23 @@
 <body>
     <div class="container">
         <header>
-            <h1>🎬 <a href="/" class="back-link">Open Frame Annotator</a></h1>
+            <div class="header-top">
+                <h1>🎬 <a href="/" class="back-link">Open Frame Annotator</a></h1>
+                <div class="header-actions">
+                    <a id="reportLink" href="#" class="header-action-btn" target="_blank">📄 Report</a>
+                </div>
+            </div>
+            <div id="projectMeta" style="display:none;">
+                <h2 id="projectTitle"></h2>
+                <p id="projectDescription"></p>
+            </div>
         </header>
 
         <div id="loading">Loading project...</div>
 
         <div id="project-content" style="display: none;">
             <div class="project-layout">
-                <!-- Left side: Video and controls -->
+                <!-- Left: video + controls -->
                 <div class="video-section">
                     <div class="video-container">
                         <div id="youtube-player"></div>
@@ -25,22 +34,35 @@
                     <div class="annotation-form">
                         <h3>Add Comment</h3>
                         <div class="form-row">
-                            <input type="text" id="authorName" placeholder="Your name" />
-                            <input type="text" id="commentText" placeholder="Comment text" />
+                            <input type="text" id="authorName" placeholder="Your name" maxlength="100" />
+                            <input type="text" id="commentText" placeholder="Comment text" maxlength="2000" />
                         </div>
+                        <div id="tagSelector" class="tag-selector"></div>
                         <button id="addAnnotation">Add at <span id="currentTime">00:00</span></button>
+                        <p class="shortcuts-hint">
+                            <kbd>Space</kbd> play/pause &nbsp;
+                            <kbd>←</kbd><kbd>→</kbd> ±5s &nbsp;
+                            <kbd>Shift+←</kbd><kbd>Shift+→</kbd> ±10s &nbsp;
+                            <kbd>A</kbd> focus comment
+                        </p>
                     </div>
 
                     <div class="timeline-container">
-                        <h3>Timeline</h3>
+                        <div class="timeline-header">
+                            <h3>Timeline</h3>
+                            <button class="export-btn" onclick="openExportModal()">⬇ Export Markers</button>
+                        </div>
                         <div id="timeline" class="timeline"></div>
                     </div>
                 </div>
 
-                <!-- Right side: Comments list -->
+                <!-- Right: comments list -->
                 <div class="comments-section">
                     <div class="annotations-list">
-                        <h3>Comments (<span id="annotationsCount">0</span>)</h3>
+                        <h3>
+                            Comments (<span id="annotationsCount">0</span>)
+                            <span id="progressText" class="progress-text"></span>
+                        </h3>
                         <div id="annotationsList"></div>
                     </div>
                 </div>
@@ -48,8 +70,57 @@
         </div>
     </div>
 
-    <!-- YouTube Player API -->
+    <div id="toast-container"></div>
+
+    <!-- Export modal -->
+    <div id="export-modal" class="modal-overlay" onclick="closeExportModal(event)">
+        <div class="modal-dialog">
+            <div class="modal-header">
+                <h3>⬇ Export Markers</h3>
+                <button class="modal-close" onclick="closeExportModal()">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="export-controls">
+                    <div class="export-row">
+                        <label for="exportFps">Frame rate</label>
+                        <select id="exportFps">
+                            <option value="23.976">23.976 fps</option>
+                            <option value="24" selected>24 fps</option>
+                            <option value="25">25 fps (PAL)</option>
+                            <option value="29.97">29.97 fps (NTSC drop-frame)</option>
+                            <option value="30">30 fps</option>
+                            <option value="48">48 fps (HFR)</option>
+                            <option value="50">50 fps</option>
+                            <option value="59.94">59.94 fps</option>
+                            <option value="60">60 fps</option>
+                        </select>
+                        <button class="export-download-btn" onclick="triggerExport()">Download CSV</button>
+                    </div>
+                    <p class="export-hint">Match this to your Premiere sequence frame rate.</p>
+                </div>
+                <div class="tutorial-divider"></div>
+                <div class="tutorial-section">
+                    <h4>How to import in Adobe Premiere Pro</h4>
+                    <ol class="tutorial-steps">
+                        <li>Select your frame rate above and click <strong>Download CSV</strong>.</li>
+                        <li>Open the <strong>Markers</strong> panel in Premiere Pro.<span class="tutorial-hint">Window → Markers</span></li>
+                        <li>Click the <strong>panel menu icon</strong> (≡) in the top-right corner of the Markers panel.</li>
+                        <li>Choose <strong>"Import Markers from CSV…"</strong> and select the downloaded file.</li>
+                        <li>Markers appear on your timeline labeled with author name and comment text.</li>
+                    </ol>
+                    <div class="tutorial-note">
+                        <strong>DaVinci Resolve:</strong> Markers panel → panel menu (⋮) → <em>Import Markers from CSV</em>. Same file works.
+                    </div>
+                    <div class="tutorial-note" style="margin-top: 8px;">
+                        <strong>Note on 29.97 / 59.94:</strong> Non-drop-frame calculation used. Slight drift at long durations — fine for review, not for broadcast QC.
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script src="https://www.youtube.com/iframe_api"></script>
+    <script src="/socket.io/socket.io.js"></script>
     <script src="/project.js"></script>
 </body>
 </html>
