@@ -7,6 +7,8 @@
 
 Perfect for **video reviews**, **tutorials**, **team feedback**, and **collaborative editing workflows**.
 
+If it saves you time, [☕ buy me a coffee](https://base.monobank.ua/4QTZuQ2Q8UfjJF) — it keeps the project going.
+
 ---
 
 ## ✨ Features
