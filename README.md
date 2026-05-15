@@ -1,6 +1,6 @@
 # 🎬 Open Frame Annotator
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 [![Node.js](https://img.shields.io/badge/Node.js-v18+-green)](https://nodejs.org/)
 
 **Open Frame Annotator** is an open-source tool for collaborative YouTube video annotation. Create a project from any YouTube video, invite your team to leave time-stamped comments, reply in threads, tag issues by category, and export everything to Premiere Pro markers or a printable PDF report.
@@ -418,7 +418,9 @@ npm run dev   # starts with nodemon
 
 ## 📝 License
 
-MIT — see [LICENSE](LICENSE).
+GNU Affero General Public License v3.0 — see [LICENSE](LICENSE).
+
+If you modify this software and run it as a network service, you must make your source code available under the same license.
 
 ---
 
