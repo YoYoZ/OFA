@@ -256,7 +256,7 @@
                 <table>
                     <thead>
                         <tr>
-                            <th>Project ID</th>
+                            <th>Project</th>
                             <th>YouTube URL</th>
                             <th>Comments</th>
                             <th>Created</th>
@@ -332,6 +332,9 @@
 
                 if (response.ok) {
                     showAdminPanel();
+                } else if (response.status === 429) {
+                    errorDiv.textContent = 'Too many attempts. Try again in 15 minutes.';
+                    errorDiv.style.display = 'block';
                 } else {
                     errorDiv.textContent = 'Invalid password!';
                     errorDiv.style.display = 'block';
@@ -382,19 +385,19 @@
                 tbody.innerHTML = data.projects.map(project => `
                     <tr>
                         <td>
-                            <a href="/project/${project.id}" class="project-link" target="_blank">
-                                <code>${project.id.substring(0, 8)}...</code>
+                            <a href="/project/${encodeURIComponent(project.id)}" class="project-link" target="_blank" rel="noopener">
+                                ${project.title ? escapeHtml(project.title) : `<code>${escapeHtml(project.id.substring(0, 8))}...</code>`}
                             </a>
                         </td>
                         <td>
-                            <a href="${escapeHtml(project.youtube_url)}" class="youtube-link" target="_blank">
+                            <a href="${escapeHtml(project.youtube_url)}" class="youtube-link" target="_blank" rel="noopener noreferrer">
                                 ${escapeHtml(project.youtube_url)}
                             </a>
                         </td>
                         <td>${project.annotations_count}</td>
-                        <td>${new Date(project.created_at).toLocaleString('en-US')}</td>
+                        <td>${escapeHtml(new Date(project.created_at.replace(' ', 'T') + 'Z').toLocaleString('en-US'))}</td>
                         <td>
-                            <button class="delete-btn" onclick="deleteProject('${project.id}')">
+                            <button class="delete-btn" data-id="${escapeHtml(project.id)}" onclick="deleteProject(this.dataset.id)">
                                 🗑️ Delete
                             </button>
                         </td>
@@ -412,7 +415,7 @@
             }
 
             try {
-                const response = await fetch(`/api/admin/projects/${projectId}`, {
+                const response = await fetch(`/api/admin/projects/${encodeURIComponent(projectId)}`, {
                     method: 'DELETE'
                 });
 
@@ -434,9 +437,12 @@
         }
 
         function escapeHtml(text) {
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
+            return String(text ?? '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
         }
     </script>
 </body>

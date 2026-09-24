@@ -1,17 +1,16 @@
-version: '3.8'
-
 services:
-  app:
+  ofa:
     build: .
-    ports:
-      - "3000:3000"
-    volumes:
-      - ./data:/app/data
-    env_file:
-      - .env              # ✅ FIX: загружаем переменные из .env
-    environment:
-      - NODE_ENV=production
     restart: unless-stopped
-
-volumes:
-  data:
+    ports:
+      - "${OFA_PORT:-3000}:3000"
+    environment:
+      # Everything is optional. Values are read from .env next to this file (see .env.example).
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      SESSION_SECRET: ${SESSION_SECRET:-}
+      PUBLIC_URL: ${PUBLIC_URL:-}
+      TRUST_PROXY: ${TRUST_PROXY:-}
+      ALLOWED_ORIGIN: ${ALLOWED_ORIGIN:-}
+    volumes:
+      # SQLite database + generated secrets. Back up this folder.
+      - ./data:/app/data

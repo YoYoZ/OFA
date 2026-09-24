@@ -42,13 +42,15 @@
                     <input type="text" id="shareUrl" readonly />
                     <button onclick="copyUrl()">Copy Link</button>
                 </div>
-                <a id="openProject" href="#" target="_blank">Open Project →</a>
+                <a id="openProject" href="#" target="_blank" rel="noopener">Open Project →</a>
             </div>
         </div>
     </div>
 
     <script>
+        let creating = false;
         async function createProject() {
+            if (creating) return;
             const title = document.getElementById('projectTitle').value.trim();
             const url = document.getElementById('youtubeUrl').value.trim();
             const description = document.getElementById('projectDescription').value.trim();
@@ -57,6 +59,7 @@
             if (!title) { alert('Please enter a project title'); return; }
             if (!url) { alert('Please enter a YouTube URL'); return; }
 
+            creating = true;
             try {
                 const response = await fetch('/api/projects', {
                     method: 'POST',
@@ -84,6 +87,8 @@
                 document.getElementById('projectTags').value = '';
             } catch (error) {
                 alert(error.message || 'Error creating project. Please try again.');
+            } finally {
+                creating = false;
             }
         }
 
@@ -101,8 +106,10 @@
             });
         }
 
-        document.addEventListener('keypress', function(e) {
-            if (e.key === 'Enter') createProject();
+        document.querySelectorAll('.create-form input').forEach(input => {
+            input.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter' && !e.isComposing) createProject();
+            });
         });
     </script>
 </body>

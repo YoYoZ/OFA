@@ -12,7 +12,7 @@
             <div class="header-top">
                 <h1>🎬 <a href="/" class="back-link">Open Frame Annotator</a></h1>
                 <div class="header-actions">
-                    <a id="reportLink" href="#" class="header-action-btn" target="_blank">📄 Report</a>
+                    <a id="reportLink" href="#" class="header-action-btn" target="_blank" rel="noopener">📄 Report</a>
                 </div>
             </div>
             <div id="projectMeta" style="display:none;">
@@ -112,7 +112,7 @@
                         <strong>DaVinci Resolve:</strong> Markers panel → panel menu (⋮) → <em>Import Markers from CSV</em>. Same file works.
                     </div>
                     <div class="tutorial-note" style="margin-top: 8px;">
-                        <strong>Note on 29.97 / 59.94:</strong> Non-drop-frame calculation used. Slight drift at long durations — fine for review, not for broadcast QC.
+                        <strong>Note on 29.97 / 59.94:</strong> timecodes are exported in SMPTE drop-frame format (<code>HH:MM:SS;FF</code>). Use a drop-frame sequence in your NLE.
                     </div>
                 </div>
             </div>

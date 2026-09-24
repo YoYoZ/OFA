@@ -264,7 +264,7 @@
         const TAG_PALETTE = ['#64b5f6','#52b788','#ffd700','#e74c3c','#9b59b6','#e67e22','#1abc9c','#e91e63'];
         const projectId = window.location.pathname.split('/')[2];
 
-        document.getElementById('backLink').href = `/project/${projectId}`;
+        document.getElementById('backLink').href = `/project/${encodeURIComponent(projectId)}`;
 
         function tagColor(name, config) {
             const idx = config.indexOf(name);
@@ -272,9 +272,12 @@
         }
 
         function escapeHtml(text) {
-            const d = document.createElement('div');
-            d.textContent = String(text);
-            return d.innerHTML;
+            return String(text ?? '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
         }
 
         function formatTime(s) {
@@ -282,14 +285,20 @@
             return `${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`;
         }
 
-        function extractVideoId(url) {
-            const patterns = [
-                /(?:youtube\.com\/watch\?v=)([^&]+)/,
-                /(?:youtube\.com\/embed\/)([^?]+)/,
-                /(?:youtu\.be\/)([^?]+)/,
-            ];
-            for (const p of patterns) { const m = url.match(p); if (m?.[1]) return m[1]; }
-            return null;
+        function extractVideoId(input) {
+            let url;
+            try { url = new URL(String(input).trim()); } catch { return null; }
+            const host = url.hostname.toLowerCase().replace(/^(www\.|m\.|music\.)/, '');
+            let id = null;
+            if (host === 'youtu.be') id = url.pathname.split('/')[1];
+            else if (host === 'youtube.com' || host === 'youtube-nocookie.com') {
+                if (url.pathname === '/watch') id = url.searchParams.get('v');
+                else {
+                    const [, kind, value] = url.pathname.split('/');
+                    if (['embed', 'v', 'shorts', 'live'].includes(kind)) id = value;
+                }
+            }
+            return id && /^[A-Za-z0-9_-]{11}$/.test(id) ? id : null;
         }
 
         function statusBadge(status) {
@@ -358,7 +367,7 @@
                         <div class="report-meta">
                             <h1>${escapeHtml(project.title || 'Untitled Project')}</h1>
                             ${project.description ? `<p class="description">${escapeHtml(project.description)}</p>` : ''}
-                            <p class="url"><a href="${escapeHtml(project.youtube_url)}" target="_blank">${escapeHtml(project.youtube_url)}</a></p>
+                            <p class="url"><a href="${escapeHtml(project.youtube_url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(project.youtube_url)}</a></p>
                             <p class="export-date">Exported ${new Date().toLocaleString('en-US', { dateStyle: 'long', timeStyle: 'short' })}</p>
                         </div>
                     </div>

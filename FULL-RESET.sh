@@ -1,34 +1,24 @@
 #!/bin/bash
+# Full hard reset: rebuilds the image from scratch and WIPES ALL DATA (projects, comments, secrets).
+set -e
+cd "$(dirname "$0")"
 
-echo "🔧 Full hardreset"
-echo "=================="
+read -r -p "This deletes ./data (all projects and comments). Type 'yes' to continue: " answer
+[ "$answer" = "yes" ] || { echo "Aborted."; exit 1; }
 
-echo ""
-echo "1️⃣ Stopping container..."
+echo "1) Stopping containers..."
 docker compose down -v --remove-orphans
 
-echo ""
-echo "2️⃣ Clearing build cache..."
-docker compose build --no-cache --force-rm
-
-echo ""
-echo "3️⃣ Removing old database..."
+echo "2) Removing data..."
 rm -rf data/
 mkdir -p data/
 
-echo ""
-echo "4️⃣ Building anew container..."
-docker compose up -d --build
+echo "3) Rebuilding image without cache..."
+docker compose build --no-cache --pull
+
+echo "4) Starting..."
+docker compose up -d
 
 echo ""
-echo "5️⃣ Waiting for initialising..."
-sleep 5
-
-echo ""
-echo "✅ READY!"
-echo ""
-echo "To check logs:"
-echo "  docker-compose logs -f"
-echo ""
-echo "Default address is:"
-echo "  http://localhost:3000"
+echo "Ready. Logs:  docker compose logs -f"
+echo "If ADMIN_PASSWORD is not set, the generated password is printed in the logs."

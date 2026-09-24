@@ -1,4 +1,4 @@
-const projectId = window.location.pathname.split('/').pop();
+const projectId = window.location.pathname.split('/').filter(Boolean).pop();
 
 let player;
 let projectData;
@@ -130,6 +130,9 @@ document.addEventListener('DOMContentLoaded', () => {
   authorInput.addEventListener('blur',  (e) => { try { localStorage.setItem('author_name', e.target.value); } catch {} });
 
   document.getElementById('addAnnotation').addEventListener('click', addAnnotation);
+  document.getElementById('commentText').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); addAnnotation(); }
+  });
 
   // Delegated click handler for all annotation list actions
   document.getElementById('annotationsList').addEventListener('click', (e) => {
@@ -315,6 +318,9 @@ async function addAnnotation() {
 
   try { localStorage.setItem('author_name', author); } catch {}
 
+  const addBtn = document.getElementById('addAnnotation');
+  if (addBtn.disabled) return;
+  addBtn.disabled = true;
   try {
     const response = await fetch(`/api/projects/${projectId}/annotations`, {
       method: 'POST',
@@ -326,8 +332,7 @@ async function addAnnotation() {
     const newAnnotation = await response.json();
     if (newAnnotation.edit_token) saveAnnotationToken(newAnnotation.id, newAnnotation.edit_token);
 
-    annotations.push(newAnnotation);
-    annotations.sort((a, b) => a.timecode - b.timecode);
+    upsertAnnotation(newAnnotation);
     selectedTags = [];
     document.querySelectorAll('.tag-chip').forEach(c => c.classList.remove('active'));
     document.getElementById('commentText').value = '';
@@ -336,7 +341,17 @@ async function addAnnotation() {
     showToast('Comment added', 'success');
   } catch (error) {
     showToast(error.message || 'Error adding comment', 'error');
+  } finally {
+    addBtn.disabled = false;
   }
+}
+
+// Inserts or replaces an annotation; the socket echo can arrive before the POST response
+function upsertAnnotation(annotation) {
+  const idx = annotations.findIndex(a => a.id === annotation.id);
+  if (idx >= 0) annotations[idx] = { ...annotations[idx], ...annotation };
+  else annotations.push(annotation);
+  annotations.sort((a, b) => a.timecode - b.timecode);
 }
 
 async function deleteAnnotation(annotationId) {
@@ -415,7 +430,9 @@ async function submitReply(parentId) {
 
     const newReply = await response.json();
     if (newReply.edit_token) saveAnnotationToken(newReply.id, newReply.edit_token);
-    annotations.push(newReply);
+    upsertAnnotation(newReply);
+    toggleReplyForm(parentId, false);
+    form.querySelector('.reply-text').value = '';
     updateAnnotationsList();
     showToast('Reply added', 'success');
   } catch (error) {
@@ -425,8 +442,37 @@ async function submitReply(parentId) {
 
 // ── Render ────────────────────────────────────────────────────────────────────
 
+// Re-rendering the list must not wipe reply forms someone is typing into
+function captureReplyForms() {
+  const state = {};
+  const active = document.activeElement;
+  document.querySelectorAll('.reply-form').forEach(form => {
+    if (form.style.display === 'none') return;
+    state[form.id] = {
+      author: form.querySelector('.reply-author').value,
+      text: form.querySelector('.reply-text').value,
+      focus: active && form.contains(active)
+        ? (active.classList.contains('reply-author') ? '.reply-author' : '.reply-text')
+        : null
+    };
+  });
+  return state;
+}
+
+function restoreReplyForms(state) {
+  Object.entries(state).forEach(([formId, s]) => {
+    const form = document.getElementById(formId);
+    if (!form) return;
+    form.style.display = 'block';
+    form.querySelector('.reply-author').value = s.author;
+    form.querySelector('.reply-text').value = s.text;
+    if (s.focus) form.querySelector(s.focus).focus();
+  });
+}
+
 function updateAnnotationsList() {
   const list  = document.getElementById('annotationsList');
+  const openForms = captureReplyForms();
   const roots = annotations.filter(a => !a.parent_id);
   const replies = (parentId) => annotations.filter(a => a.parent_id === parentId);
 
@@ -470,7 +516,7 @@ function updateAnnotationsList() {
       <div class="annotation-item ${statusClass}" data-id="${annotation.id}">
         <div class="annotation-meta">
           <span class="annotation-author">${escapeHtml(annotation.author)}</span>
-          <span class="annotation-timecode" data-timecode="${annotation.timecode}">${formatTime(annotation.timecode)}</span>
+          <span class="annotation-timecode" data-timecode="${Number(annotation.timecode)}">${formatTime(annotation.timecode)}</span>
         </div>
         <div class="annotation-text">${escapeHtml(annotation.text)}</div>
         ${renderTagPills(annotation.tags)}
@@ -495,6 +541,7 @@ function updateAnnotationsList() {
       </div>
     `;
   }).join('');
+  restoreReplyForms(openForms);
 }
 
 // ── Timeline ──────────────────────────────────────────────────────────────────
@@ -547,7 +594,7 @@ function updateTimeline() {
       const color = a.status === 1 ? '#52b788' : a.status === 2 ? '#e74c3c' : '#ffd700';
       html += `<div class="timeline-marker"
                     style="left:${cluster.position}%;background-color:${color};"
-                    onclick="seekToTime(${a.timecode})"
+                    onclick="seekToTime(${Number(a.timecode)})"
                     title="${escapeHtml(a.author)}: ${escapeHtml(a.text)} (${formatTime(a.timecode)})">
                </div>`;
     }
@@ -598,12 +645,18 @@ function expandCluster(clusterIndex, centerPos) {
 
 function connectSocket() {
   socket = io();
-  socket.emit('join-project', projectId);
+  let connectedOnce = false;
+
+  // Rooms are per-connection: re-join after every (re)connect and catch up on missed changes
+  socket.on('connect', () => {
+    socket.emit('join-project', projectId);
+    if (connectedOnce) resyncAnnotations();
+    connectedOnce = true;
+  });
 
   socket.on('annotation:created', (annotation) => {
     if (annotations.find(a => a.id === annotation.id)) return;
-    annotations.push(annotation);
-    annotations.sort((a, b) => a.timecode - b.timecode);
+    upsertAnnotation(annotation);
     updateAnnotationsList();
     updateTimeline();
     if (!annotation.parent_id) showToast(`New comment from ${annotation.author}`, 'info');
@@ -630,6 +683,26 @@ function connectSocket() {
     updateAnnotationsList();
     updateTimeline();
   });
+
+  socket.on('project:deleted', () => {
+    socket.disconnect();
+    showToast('This project has been deleted by an administrator', 'error');
+    document.getElementById('project-content').style.display = 'none';
+    const loading = document.getElementById('loading');
+    loading.textContent = 'This project has been deleted.';
+    loading.style.display = 'block';
+  });
+}
+
+async function resyncAnnotations() {
+  try {
+    const response = await fetch(`/api/projects/${projectId}`);
+    if (!response.ok) return;
+    const data = await response.json();
+    annotations = data.annotations || [];
+    updateAnnotationsList();
+    updateTimeline();
+  } catch {}
 }
 
 // ── Export modal ──────────────────────────────────────────────────────────────
@@ -658,15 +731,20 @@ function seekToTime(seconds) {
   }
 }
 
-function extractVideoId(url) {
-  const patterns = [
-    /(?:youtube\.com\/watch\?v=)([^&]+)/,
-    /(?:youtube\.com\/embed\/)([^?]+)/,
-    /(?:youtu\.be\/)([^?]+)/,
-    /(?:youtube\.com\/v\/)([^?]+)/
-  ];
-  for (const p of patterns) { const m = url.match(p); if (m?.[1]) return m[1]; }
-  return null;
+function extractVideoId(input) {
+  let url;
+  try { url = new URL(String(input).trim()); } catch { return null; }
+  const host = url.hostname.toLowerCase().replace(/^(www\.|m\.|music\.)/, '');
+  let id = null;
+  if (host === 'youtu.be') id = url.pathname.split('/')[1];
+  else if (host === 'youtube.com' || host === 'youtube-nocookie.com') {
+    if (url.pathname === '/watch') id = url.searchParams.get('v');
+    else {
+      const [, kind, value] = url.pathname.split('/');
+      if (['embed', 'v', 'shorts', 'live'].includes(kind)) id = value;
+    }
+  }
+  return id && /^[A-Za-z0-9_-]{11}$/.test(id) ? id : null;
 }
 
 function formatTime(seconds) {
@@ -674,8 +752,12 @@ function formatTime(seconds) {
   return `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
 }
 
+// Safe for both element content and quoted attribute values
 function escapeHtml(text) {
-  const d = document.createElement('div');
-  d.textContent = text;
-  return d.innerHTML;
+  return String(text ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
