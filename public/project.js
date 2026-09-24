@@ -1,18 +1,30 @@
-const projectId = window.location.pathname.split('/').filter(Boolean).pop();
+const projectId = decodeURIComponent(window.location.pathname.split('/').filter(Boolean).pop());
 
 let player;
-let projectData;
+let project = null;
 let annotations = [];
 let tagsConfig = [];
-let selectedTags = [];
+let perms = { review: false, moderate: false, admin: false };
+let storyboard = null;
 let isYouTubeReady = false;
-let isProjectLoaded = false;
 let videoDuration = 0;
 let playerInitAttempts = 0;
-let timeUpdateInterval = null;
 let socket = null;
 
-const TAG_PALETTE = ['#64b5f6', '#52b788', '#ffd700', '#e74c3c', '#9b59b6', '#e67e22', '#1abc9c', '#e91e63'];
+// Comment form state
+let selectedTags = [];
+let rangeIn = null;
+let rangeOut = null;
+let draftTimecode = null;        // time captured when the user started typing
+let attachFrame = false;
+
+// List state
+let selectedId = null;
+let editingId = null;
+let editTags = [];
+const openReplies = new Set();
+const checked = new Set();
+const filters = { search: '', status: 'all', tag: '', author: '', sort: 'time' };
 
 // ── Audio (single shared context) ────────────────────────────────────────────
 
@@ -62,188 +74,190 @@ function playRejectSound() {
   });
 }
 
-// ── Toast ─────────────────────────────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
-function showToast(message, type = 'info') {
-  const container = document.getElementById('toast-container');
-  const toast = document.createElement('div');
-  toast.className = `toast toast-${type}`;
-  toast.textContent = message;
-  container.appendChild(toast);
-  setTimeout(() => toast.classList.add('toast-hide'), 2700);
-  setTimeout(() => toast.remove(), 3000);
+const $ = (id) => document.getElementById(id);
+const roots = () => annotations.filter(a => !a.parent_id);
+const repliesOf = (id) => annotations.filter(a => a.parent_id === id);
+const findAnnotation = (id) => annotations.find(a => a.id === id);
+const isOwn = (a) => !!EditTokens.get(a.id);
+const authorName = () => $('authorName').value.trim();
+
+const STATUS_BUTTON_LABELS = { 3: '◔ In work', 1: '✓ Accept', 2: '✗ Reject' };
+
+function upsertAnnotation(annotation) {
+  const idx = annotations.findIndex(a => a.id === annotation.id);
+  if (idx >= 0) annotations[idx] = { ...annotations[idx], ...annotation };
+  else annotations.push(annotation);
+  annotations.sort((a, b) => a.timecode - b.timecode || String(a.created_at).localeCompare(String(b.created_at)));
 }
 
-// ── Edit token storage ────────────────────────────────────────────────────────
-
-function getAnnotationTokens() {
-  try { return JSON.parse(localStorage.getItem('annotation_tokens') || '{}'); } catch { return {}; }
-}
-function saveAnnotationToken(id, token) {
-  try { const t = getAnnotationTokens(); t[id] = token; localStorage.setItem('annotation_tokens', JSON.stringify(t)); } catch {}
-}
-function getAnnotationToken(id) { return getAnnotationTokens()[id] || null; }
-
-// ── Tags ──────────────────────────────────────────────────────────────────────
-
-function tagColor(tagName) {
-  const idx = tagsConfig.indexOf(tagName);
-  return TAG_PALETTE[(idx >= 0 ? idx : 0) % TAG_PALETTE.length];
+let backupTimer = null;
+function scheduleBackup(opened = false) {
+  clearTimeout(backupTimer);
+  backupTimer = setTimeout(() => {
+    if (project) Backup.saveSnapshot({ ...project }, annotations, { opened });
+  }, opened ? 0 : 800);
 }
 
-function renderTagSelector() {
-  const container = document.getElementById('tagSelector');
-  if (!tagsConfig.length) { container.style.display = 'none'; return; }
-  container.style.display = 'flex';
-  container.innerHTML = tagsConfig.map(tag => `
-    <button class="tag-chip" data-tag="${escapeHtml(tag)}"
-            style="--tag-color:${tagColor(tag)}">
-      ${escapeHtml(tag)}
-    </button>
-  `).join('');
-  container.addEventListener('click', (e) => {
-    const chip = e.target.closest('.tag-chip');
-    if (!chip) return;
-    const tag = chip.dataset.tag;
-    const idx = selectedTags.indexOf(tag);
-    if (idx >= 0) selectedTags.splice(idx, 1); else selectedTags.push(tag);
-    chip.classList.toggle('active', selectedTags.includes(tag));
-  });
+function currentTime() {
+  try { return player && player.getCurrentTime ? player.getCurrentTime() : 0; } catch { return 0; }
 }
 
-function renderTagPills(tagsJson) {
-  if (!tagsJson) return '';
-  let tags;
-  try { tags = JSON.parse(tagsJson); } catch { return ''; }
-  if (!Array.isArray(tags) || !tags.length) return '';
-  return `<div class="annotation-tags">${tags.map(t =>
-    `<span class="tag-pill" style="background:${tagColor(t)}">${escapeHtml(t)}</span>`
-  ).join('')}</div>`;
+function isPlaying() {
+  try { return player.getPlayerState() === YT.PlayerState.PLAYING; } catch { return false; }
+}
+
+function frameStep() {
+  const fps = parseFloat((lsGet('ofa_export', {}) || {}).fps) || 25;
+  return 1 / fps;
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 
 document.addEventListener('DOMContentLoaded', () => {
-  const authorInput = document.getElementById('authorName');
-  try { const saved = localStorage.getItem('author_name'); if (saved) authorInput.value = saved; } catch {}
-  authorInput.addEventListener('input', (e) => { try { localStorage.setItem('author_name', e.target.value); } catch {} });
-  authorInput.addEventListener('blur',  (e) => { try { localStorage.setItem('author_name', e.target.value); } catch {} });
+  EditorKeys.captureFromHash(projectId);
 
-  document.getElementById('addAnnotation').addEventListener('click', addAnnotation);
-  document.getElementById('commentText').addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); addAnnotation(); }
+  const authorInput = $('authorName');
+  authorInput.value = lsGet('author_name_v2', null) ?? (localStorage.getItem('author_name') || '');
+  authorInput.addEventListener('input', () => lsSet('author_name_v2', authorInput.value));
+
+  const autoPause = $('autoPause');
+  autoPause.checked = lsGet('ofa_autopause', true);
+  autoPause.addEventListener('change', () => lsSet('ofa_autopause', autoPause.checked));
+
+  $('commentText').addEventListener('input', onCommentInput);
+  $('addAnnotation').addEventListener('click', addAnnotation);
+  $('frameToggle').addEventListener('click', toggleAttachFrame);
+  $('rangeInfo').addEventListener('click', (e) => { if (e.target.closest('[data-clear-range]')) clearRange(); });
+
+  $('tagSelector').addEventListener('click', (e) => {
+    const chip = e.target.closest('.tag-chip');
+    if (!chip) return;
+    const tag = chip.dataset.tag;
+    selectedTags = selectedTags.includes(tag) ? selectedTags.filter(t => t !== tag) : [...selectedTags, tag];
+    chip.classList.toggle('active', selectedTags.includes(tag));
   });
 
-  // Delegated click handler for all annotation list actions
-  document.getElementById('annotationsList').addEventListener('click', (e) => {
-    const actionEl = e.target.closest('[data-action]');
-    if (actionEl) {
-      const { action, id } = actionEl.dataset;
-      if (action === 'delete')        deleteAnnotation(id);
-      else if (action === 'accept')   updateAnnotationStatus(id, 1);
-      else if (action === 'reject')   updateAnnotationStatus(id, 2);
-      else if (action === 'reply')    toggleReplyForm(id);
-      else if (action === 'send-reply')   submitReply(id);
-      else if (action === 'cancel-reply') toggleReplyForm(id, false);
-      return;
-    }
-    const tcEl = e.target.closest('[data-timecode]');
-    if (tcEl) seekToTime(parseFloat(tcEl.dataset.timecode));
+  $('annotationsList').addEventListener('click', onListClick);
+  $('annotationsList').addEventListener('change', (e) => {
+    const box = e.target.closest('[data-check]');
+    if (!box) return;
+    if (box.checked) checked.add(box.dataset.check); else checked.delete(box.dataset.check);
+    updateBulkBar();
   });
 
-  setupKeyboardShortcuts();
+  setupFilters();
+  setupTimeline();
+  setupModals();
+  setupKeyboard();
+  renderRangeInfo();
   loadProject();
 });
-
-// ── Keyboard shortcuts ────────────────────────────────────────────────────────
-
-function setupKeyboardShortcuts() {
-  document.addEventListener('keydown', (e) => {
-    if (e.target.matches('input, textarea, select')) return;
-    switch (e.key) {
-      case ' ':
-        e.preventDefault();
-        togglePlayPause();
-        break;
-      case 'ArrowLeft':
-        e.preventDefault();
-        seekRelative(e.shiftKey ? -10 : -5);
-        break;
-      case 'ArrowRight':
-        e.preventDefault();
-        seekRelative(e.shiftKey ? 10 : 5);
-        break;
-      case 'a':
-      case 'A':
-        document.getElementById('commentText').focus();
-        break;
-      case 'Escape':
-        closeExportModal();
-        document.querySelectorAll('.reply-form').forEach(f => f.style.display = 'none');
-        break;
-    }
-  });
-}
-
-function togglePlayPause() {
-  if (!player || !player.getPlayerState) return;
-  try {
-    player.getPlayerState() === YT.PlayerState.PLAYING
-      ? player.pauseVideo()
-      : player.playVideo();
-  } catch {}
-}
-
-function seekRelative(delta) {
-  if (!player || !player.getCurrentTime) return;
-  try { player.seekTo(Math.max(0, player.getCurrentTime() + delta), true); } catch {}
-}
 
 // ── Project load ──────────────────────────────────────────────────────────────
 
 async function loadProject() {
   try {
-    const response = await fetch(`/api/projects/${projectId}`);
-    if (!response.ok) throw new Error('Project not found');
+    const data = await api('GET', `/api/projects/${encodeURIComponent(projectId)}`, undefined, { projectId });
+    applyProjectData(data);
+    document.title = `${project.title || 'Project'} — Open Frame Annotator`;
+    $('reportLink').href = `/project/${encodeURIComponent(projectId)}/report`;
+    $('loading').style.display = 'none';
+    $('restorePanel').style.display = 'none';
+    $('project-content').style.display = 'block';
 
-    projectData = await response.json();
-    annotations = projectData.annotations || [];
-    tagsConfig = projectData.project.tags_config
-      ? JSON.parse(projectData.project.tags_config) : [];
-    isProjectLoaded = true;
-
-    // Update page title and meta
-    if (projectData.project.title) {
-      document.title = `${projectData.project.title} — Open Frame Annotator`;
-      document.getElementById('projectTitle').textContent = projectData.project.title;
-      const metaEl = document.getElementById('projectMeta');
-      metaEl.style.display = 'block';
-      if (projectData.project.description) {
-        document.getElementById('projectDescription').textContent = projectData.project.description;
-      }
-    }
-    document.getElementById('reportLink').href = `/project/${projectId}/report`;
-
-    renderTagSelector();
-    updateAnnotationsList();
-    updateTimeline();
-
-    document.getElementById('loading').style.display = 'none';
-    document.getElementById('project-content').style.display = 'block';
-
+    scheduleBackup(true);
     connectSocket();
     tryInitializePlayer();
+
+    storyboard = await Storyboard.load(projectId);
+    if (storyboard) { renderList(); renderTimeline(); }
   } catch (error) {
+    if (error.status === 404) return showRestorePanel();
     console.error('Error loading project:', error);
-    document.getElementById('loading').textContent = 'Error: ' + error.message;
+    $('loading').textContent = 'Error: ' + error.message;
   }
+}
+
+function applyProjectData(data) {
+  project = data.project;
+  annotations = data.annotations || [];
+  perms = data.permissions || perms;
+  tagsConfig = parseTags(project.tags_config);
+  // The editor link was revoked by the admin — forget the dead key
+  if (EditorKeys.get(projectId) && !perms.review) {
+    EditorKeys.set(projectId, null);
+    showToast('Your editor link is no longer valid — you are a reviewer now', 'error');
+  }
+  renderHeader(data.retention);
+  renderTagSelector();
+  renderAll();
+}
+
+let retentionInfo = null;
+function renderHeader(retention) {
+  if (retention) retentionInfo = retention;
+  $('projectMeta').style.display = 'block';
+  $('projectTitle').textContent = project.title || 'Untitled project';
+  $('projectDescription').textContent = project.description || '';
+
+  const badge = $('roleBadge');
+  if (perms.moderate) { badge.textContent = perms.admin ? 'Admin' : 'Editor'; badge.className = 'role-badge editor'; badge.style.display = ''; }
+  else if (!perms.review) { badge.textContent = 'Reviewer'; badge.className = 'role-badge'; badge.style.display = ''; }
+  else badge.style.display = 'none';
+  $('settingsBtn').style.display = perms.moderate ? '' : 'none';
+  $('bulkBar').style.display = perms.review ? '' : 'none';
+  document.querySelector('[data-bulk="delete"]').style.display = perms.moderate ? '' : 'none';
+
+  const banner = $('retentionBanner');
+  const expires = project.expires_at ? new Date(project.expires_at) : null;
+  const warnDays = retentionInfo ? retentionInfo.warn_days : 30;
+  if (expires && expires.getTime() - Date.now() < warnDays * 86400000) {
+    banner.textContent = `This project will be deleted automatically on ${formatDate(expires)} because it has been inactive. Any new comment or status change keeps it alive.`;
+    banner.style.display = 'block';
+  } else {
+    banner.style.display = 'none';
+  }
+}
+
+async function showRestorePanel() {
+  $('loading').style.display = 'none';
+  const panel = $('restorePanel');
+  const entry = await Backup.get(projectId);
+  if (!entry) {
+    panel.innerHTML = '<h3>Project not found</h3><p>It may have been deleted, or the link is wrong.</p><p><a href="/">← Back to start page</a></p>';
+  } else {
+    const count = (entry.annotations || []).length;
+    panel.innerHTML = `
+      <h3>This project no longer exists on the server</h3>
+      <p>Your browser kept a backup of <strong>${escapeHtml(entry.project.title || 'Untitled project')}</strong>
+         from ${escapeHtml(formatDate(entry.savedAt))} with ${count} comment${count === 1 ? '' : 's'}.</p>
+      <p>Restoring recreates it at the same address, so existing links work again. You become its editor.</p>
+      <button type="button" class="export-download-btn" id="restoreBtn">Restore project</button>`;
+    $('restoreBtn').addEventListener('click', async (e) => {
+      e.target.disabled = true;
+      try {
+        const result = await Backup.restore(projectId);
+        showToast(`Restored ${result.restored} comments`, 'success');
+        panel.style.display = 'none';
+        $('loading').style.display = 'block';
+        if (socket) { socket.connect(); }
+        loadProject();
+      } catch (err) {
+        showToast(err.message, 'error');
+        e.target.disabled = false;
+      }
+    });
+  }
+  panel.style.display = 'block';
 }
 
 // ── YouTube player ────────────────────────────────────────────────────────────
 
 function onYouTubeIframeAPIReady() {
   isYouTubeReady = true;
-  if (isProjectLoaded && projectData) initializePlayer();
+  if (project) initializePlayer();
 }
 
 function tryInitializePlayer() {
@@ -251,7 +265,7 @@ function tryInitializePlayer() {
   if (typeof YT !== 'undefined' && typeof YT.Player === 'function') {
     isYouTubeReady = true;
     initializePlayer();
-  } else if (playerInitAttempts < 20) {
+  } else if (playerInitAttempts < 30) {
     setTimeout(tryInitializePlayer, 200);
   } else {
     showToast('Failed to load YouTube player. Please refresh.', 'error');
@@ -260,13 +274,13 @@ function tryInitializePlayer() {
 
 function initializePlayer() {
   if (player && typeof player.getPlayerState === 'function') return;
-  if (!projectData?.project || !isYouTubeReady) return;
+  if (!project || !isYouTubeReady) return;
 
-  const videoId = extractVideoId(projectData.project.youtube_url);
-  if (!videoId) { document.getElementById('loading').textContent = 'Invalid YouTube link'; return; }
+  const videoId = extractVideoId(project.youtube_url);
+  if (!videoId) { showToast('Invalid YouTube link', 'error'); return; }
 
   try {
-    document.getElementById('youtube-player').innerHTML = '';
+    $('youtube-player').innerHTML = '';
     player = new YT.Player('youtube-player', {
       height: '100%', width: '100%', videoId,
       playerVars: { autoplay: 0, playsinline: 1, rel: 0, modestbranding: 1, origin: window.location.origin, enablejsapi: 1 },
@@ -277,19 +291,19 @@ function initializePlayer() {
   }
 }
 
+let tickTimer = null;
 function onPlayerReady() {
-  if (timeUpdateInterval) clearInterval(timeUpdateInterval);
   setTimeout(() => {
-    try { videoDuration = player.getDuration(); if (videoDuration > 0) updateTimeline(); } catch {}
+    try { videoDuration = player.getDuration(); if (videoDuration > 0) renderTimeline(); } catch {}
   }, 500);
-  timeUpdateInterval = setInterval(updateCurrentTime, 1000);
+  if (!tickTimer) tickTimer = setInterval(tick, 250);
 }
 
 function onPlayerStateChange(event) {
   if (event.data === YT.PlayerState.PLAYING || event.data === YT.PlayerState.BUFFERING) {
     try {
       const d = player.getDuration();
-      if (d > 0 && d !== videoDuration) { videoDuration = d; updateTimeline(); }
+      if (d > 0 && d !== videoDuration) { videoDuration = d; renderTimeline(); }
     } catch {}
   }
 }
@@ -299,46 +313,166 @@ function onPlayerError(event) {
   showToast('Video error. ' + (messages[event.data] || ''), 'error');
 }
 
-function updateCurrentTime() {
-  if (player && player.getCurrentTime) {
-    try { document.getElementById('currentTime').textContent = formatTime(player.getCurrentTime()); } catch {}
+function tick() {
+  const t = currentTime();
+  updateAddButton(t);
+  const head = $('playhead');
+  const max = timelineMax();
+  if (head && max > 0) head.style.left = `${Math.min(100, (t / max) * 100)}%`;
+}
+
+function updateAddButton(t = currentTime()) {
+  const label = $('currentTime');
+  if (rangeIn !== null) {
+    label.textContent = rangeOut !== null ? `${formatTime(rangeIn)}–${formatTime(rangeOut)}` : `${formatTime(rangeIn)}`;
+  } else {
+    label.textContent = formatTime(draftTimecode !== null ? draftTimecode : t);
   }
 }
 
-// ── Annotations CRUD ──────────────────────────────────────────────────────────
+function seekToTime(seconds, play = false) {
+  if (!player || !player.seekTo) return;
+  try {
+    player.seekTo(Math.max(0, seconds), true);
+    if (play) player.playVideo();
+  } catch {}
+}
+
+function togglePlayPause() {
+  if (!player || !player.getPlayerState) return;
+  try {
+    if (isPlaying()) player.pauseVideo();
+    else { player.setPlaybackRate(1); player.playVideo(); }
+  } catch {}
+}
+
+const SPEEDS = [1, 1.5, 2];
+function shuttle(direction) {
+  if (!player || !player.getPlaybackRate) return;
+  try {
+    const rate = player.getPlaybackRate();
+    if (direction > 0) {
+      if (!isPlaying()) { player.setPlaybackRate(1); player.playVideo(); return; }
+      const next = SPEEDS.find(s => s > rate);
+      if (next) { player.setPlaybackRate(next); showToast(`${next}×`, 'info'); }
+    } else if (rate > 1) {
+      const prev = [...SPEEDS].reverse().find(s => s < rate) || 1;
+      player.setPlaybackRate(prev);
+      showToast(`${prev}×`, 'info');
+    } else {
+      seekRelative(-5);
+    }
+  } catch {}
+}
+
+function seekRelative(delta) {
+  seekToTime(currentTime() + delta);
+}
+
+function stepFrame(direction) {
+  if (!player) return;
+  try { player.pauseVideo(); } catch {}
+  seekToTime(currentTime() + direction * frameStep());
+}
+
+// ── Comment form ──────────────────────────────────────────────────────────────
+
+function onCommentInput() {
+  const text = $('commentText').value;
+  if (text.trim() && draftTimecode === null) {
+    draftTimecode = currentTime();
+    if ($('autoPause').checked && isPlaying()) {
+      try { player.pauseVideo(); player.seekTo(draftTimecode, true); } catch {}
+    }
+  } else if (!text.trim()) {
+    draftTimecode = null;
+  }
+  updateAddButton();
+}
+
+function setRangePoint(which) {
+  const t = currentTime();
+  if (which === 'in') {
+    rangeIn = t;
+    if (rangeOut !== null && rangeOut <= rangeIn) rangeOut = null;
+  } else {
+    if (rangeIn === null || t <= rangeIn) { showToast('Set the in point (I) before the out point', 'error'); return; }
+    rangeOut = t;
+  }
+  renderRangeInfo();
+}
+
+function clearRange() {
+  rangeIn = rangeOut = null;
+  renderRangeInfo();
+}
+
+function renderRangeInfo() {
+  const el = $('rangeInfo');
+  if (rangeIn === null) {
+    el.innerHTML = '<span class="meta-muted">Range: <kbd>I</kbd> in, <kbd>O</kbd> out</span>';
+  } else {
+    el.innerHTML = `<span class="range-set">Range ${formatTime(rangeIn)} – ${rangeOut !== null ? formatTime(rangeOut) : '<em>press O</em>'}</span>
+      <button type="button" data-clear-range title="Clear range (X)">✕</button>`;
+  }
+  updateAddButton();
+  renderTimeline();
+}
+
+function renderTagSelector() {
+  const container = $('tagSelector');
+  selectedTags = selectedTags.filter(t => tagsConfig.includes(t));
+  if (!tagsConfig.length) { container.style.display = 'none'; container.innerHTML = ''; return; }
+  container.style.display = 'flex';
+  container.innerHTML = tagsConfig.map(tag => `
+    <button type="button" class="tag-chip ${selectedTags.includes(tag) ? 'active' : ''}" data-tag="${escapeHtml(tag)}"
+            style="--tag-color:${tagColor(tag, tagsConfig)}">${escapeHtml(tag)}</button>
+  `).join('');
+}
 
 async function addAnnotation() {
-  const author = document.getElementById('authorName').value.trim();
-  const text   = document.getElementById('commentText').value.trim();
-  if (!author || !text) { showToast('Please fill in your name and comment', 'error'); return; }
-  if (!player?.getCurrentTime) { showToast('Player is not ready', 'error'); return; }
+  const author = $('authorName').value.trim();
+  const text = $('commentText').value.trim();
+  if (!author) { showToast('Please enter your name', 'error'); $('authorName').focus(); return; }
+  if (!text) { showToast('Please write a comment', 'error'); $('commentText').focus(); return; }
+  if (!player || !player.getCurrentTime) { showToast('Player is not ready', 'error'); return; }
 
-  let timecode;
-  try { timecode = player.getCurrentTime(); } catch { showToast('Error getting current time', 'error'); return; }
-
-  try { localStorage.setItem('author_name', author); } catch {}
-
-  const addBtn = document.getElementById('addAnnotation');
+  const addBtn = $('addAnnotation');
   if (addBtn.disabled) return;
   addBtn.disabled = true;
+
+  const timecode = rangeIn !== null ? rangeIn : draftTimecode !== null ? draftTimecode : currentTime();
+  const timecodeEnd = rangeIn !== null && rangeOut !== null ? rangeOut : null;
+
   try {
-    const response = await fetch(`/api/projects/${projectId}/annotations`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ author, text, timecode, tags: selectedTags.length ? selectedTags : undefined })
-    });
-    if (!response.ok) { const e = await response.json().catch(() => ({})); throw new Error(e.error || 'Error adding comment'); }
+    let shot = null;
+    if (attachFrame && FrameCapture.active()) {
+      if (Math.abs(currentTime() - timecode) > 0.2) {
+        try { player.pauseVideo(); player.seekTo(timecode, true); } catch {}
+        await new Promise(r => setTimeout(r, 900));
+      }
+      try { shot = await FrameCapture.grab(); } catch (e) { console.warn('Frame capture failed', e); }
+    }
 
-    const newAnnotation = await response.json();
-    if (newAnnotation.edit_token) saveAnnotationToken(newAnnotation.id, newAnnotation.edit_token);
+    const created = await api('POST', `/api/projects/${encodeURIComponent(projectId)}/annotations`, {
+      author, text, timecode,
+      timecode_end: timecodeEnd === null ? undefined : timecodeEnd,
+      tags: selectedTags.length ? selectedTags : undefined
+    }, { projectId });
+    EditTokens.set(created.id, created.edit_token);
+    const { edit_token: _token, ...annotation } = created;
+    upsertAnnotation(annotation);
 
-    upsertAnnotation(newAnnotation);
     selectedTags = [];
-    document.querySelectorAll('.tag-chip').forEach(c => c.classList.remove('active'));
-    document.getElementById('commentText').value = '';
-    updateAnnotationsList();
-    updateTimeline();
+    $('commentText').value = '';
+    draftTimecode = null;
+    clearRange();
+    renderTagSelector();
+    renderAll();
     showToast('Comment added', 'success');
+
+    if (shot) await uploadScreenshot(annotation.id, shot);
+    scheduleBackup();
   } catch (error) {
     showToast(error.message || 'Error adding comment', 'error');
   } finally {
@@ -346,211 +480,522 @@ async function addAnnotation() {
   }
 }
 
-// Inserts or replaces an annotation; the socket echo can arrive before the POST response
-function upsertAnnotation(annotation) {
-  const idx = annotations.findIndex(a => a.id === annotation.id);
-  if (idx >= 0) annotations[idx] = { ...annotations[idx], ...annotation };
-  else annotations.push(annotation);
-  annotations.sort((a, b) => a.timecode - b.timecode);
+async function uploadScreenshot(annotationId, blob) {
+  try {
+    const updated = await api('POST', `/api/annotations/${encodeURIComponent(annotationId)}/screenshot`, blob, {
+      projectId, headers: { 'Content-Type': 'image/jpeg', 'X-Edit-Token': EditTokens.get(annotationId) || '' }
+    });
+    upsertAnnotation({ ...updated, _shotVersion: Date.now() });
+    renderList();
+  } catch (e) {
+    showToast('Frame upload failed: ' + e.message, 'error');
+  }
 }
 
-async function deleteAnnotation(annotationId) {
-  if (!confirm('Delete this comment?')) return;
-  const token = getAnnotationToken(annotationId);
-  try {
-    const response = await fetch(`/api/annotations/${annotationId}`, {
-      method: 'DELETE',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ edit_token: token })
-    });
-    if (!response.ok) { const e = await response.json().catch(() => ({})); throw new Error(e.error || 'Error deleting'); }
+// ── Frame capture (exact frames via tab capture) ──────────────────────────────
 
-    // Remove annotation and all its replies
-    annotations = annotations.filter(a => a.id !== annotationId && a.parent_id !== annotationId);
-    updateAnnotationsList();
-    updateTimeline();
+const FrameCapture = {
+  stream: null,
+  video: null,
+  cropped: false,
+  active() { return !!(this.stream && this.stream.active); },
+  async start() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+      throw new Error('Frame capture is not supported in this browser');
+    }
+    this.stream = await navigator.mediaDevices.getDisplayMedia({
+      video: { displaySurface: 'browser', frameRate: 10 },
+      audio: false,
+      preferCurrentTab: true,
+      selfBrowserSurface: 'include',
+      surfaceSwitching: 'exclude'
+    });
+    const track = this.stream.getVideoTracks()[0];
+    this.cropped = false;
+    // Region Capture (Chrome) crops the stream to the player itself
+    if (window.CropTarget && track.cropTo) {
+      try { await track.cropTo(await CropTarget.fromElement($('playerBox'))); this.cropped = true; } catch {}
+    }
+    this.video = document.createElement('video');
+    this.video.muted = true;
+    this.video.srcObject = this.stream;
+    await this.video.play();
+    track.addEventListener('ended', () => { this.stop(); setAttachFrame(false); });
+  },
+  stop() {
+    if (this.stream) this.stream.getTracks().forEach(t => t.stop());
+    this.stream = null;
+    this.video = null;
+  },
+  async grab() {
+    await new Promise(r => setTimeout(r, 150)); // let a fresh frame arrive
+    const v = this.video;
+    const vw = v.videoWidth, vh = v.videoHeight;
+    let sx = 0, sy = 0, sw = vw, sh = vh;
+    if (!this.cropped) {
+      // Without Region Capture: cut the player out of the whole-tab frame
+      const rect = $('playerBox').getBoundingClientRect();
+      const scaleX = vw / window.innerWidth, scaleY = vh / window.innerHeight;
+      sx = Math.max(0, rect.left * scaleX); sy = Math.max(0, rect.top * scaleY);
+      sw = Math.min(vw - sx, rect.width * scaleX); sh = Math.min(vh - sy, rect.height * scaleY);
+      if (sw <= 0 || sh <= 0) throw new Error('Player is not visible');
+    }
+    const outW = Math.min(1280, Math.round(sw));
+    const outH = Math.round(sh * (outW / sw));
+    const canvas = document.createElement('canvas');
+    canvas.width = outW; canvas.height = outH;
+    canvas.getContext('2d').drawImage(v, sx, sy, sw, sh, 0, 0, outW, outH);
+    return new Promise((resolve, reject) => canvas.toBlob(b => b ? resolve(b) : reject(new Error('Encoding failed')), 'image/jpeg', 0.85));
+  }
+};
+
+function setAttachFrame(on) {
+  attachFrame = on;
+  $('frameToggle').classList.toggle('active', on);
+  $('frameToggle').textContent = on ? '📷 Frame: on' : '📷 Attach frame';
+  renderList();
+}
+
+async function toggleAttachFrame() {
+  if (attachFrame) { FrameCapture.stop(); setAttachFrame(false); return; }
+  try {
+    if (!FrameCapture.active()) {
+      showToast('Choose “This tab” in the browser dialog', 'info');
+      await FrameCapture.start();
+    }
+    setAttachFrame(true);
+  } catch (e) {
+    if (e.name !== 'NotAllowedError') showToast(e.message, 'error');
+  }
+}
+
+// Attach the frame at an own comment's timecode
+async function captureFrameFor(id) {
+  const a = findAnnotation(id);
+  if (!a || !FrameCapture.active()) return;
+  try { player.pauseVideo(); player.seekTo(a.timecode, true); } catch {}
+  await new Promise(r => setTimeout(r, 900));
+  try { await uploadScreenshot(id, await FrameCapture.grab()); showToast('Frame attached', 'success'); }
+  catch (e) { showToast(e.message, 'error'); }
+}
+
+// ── Comment actions ───────────────────────────────────────────────────────────
+
+async function deleteAnnotation(id) {
+  const a = findAnnotation(id);
+  if (!a || !confirm(a.parent_id ? 'Delete this reply?' : 'Delete this comment and its replies?')) return;
+  try {
+    await api('DELETE', `/api/annotations/${encodeURIComponent(id)}`, { edit_token: EditTokens.get(id) || undefined }, { projectId });
+    annotations = annotations.filter(x => x.id !== id && x.parent_id !== id);
+    if (selectedId === id) selectedId = null;
+    checked.delete(id);
+    renderAll();
     playTrashSound();
-    showToast('Comment deleted', 'info');
+    showToast('Deleted', 'info');
+    scheduleBackup();
   } catch (error) {
     showToast(error.message || 'Error deleting comment', 'error');
   }
 }
 
-async function updateAnnotationStatus(annotationId, status) {
-  const annotation = annotations.find(a => a.id === annotationId);
-  if (!annotation) return;
+async function setStatus(id, status) {
+  const a = findAnnotation(id);
+  if (!a || !perms.review) return;
+  // Clicking the active status again resets to pending
+  const next = (a.status || 0) === status ? 0 : status;
   try {
-    const response = await fetch(`/api/annotations/${annotationId}/status`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status })
-    });
-    if (!response.ok) throw new Error('Error updating status');
-    annotation.status = status;
-    updateAnnotationsList();
-    updateTimeline();
-    if (status === 1) playBellSound();
-    else if (status === 2) playRejectSound();
+    const res = await api('PATCH', `/api/annotations/${encodeURIComponent(id)}/status`,
+      { status: next, by: authorName() || undefined }, { projectId });
+    Object.assign(a, res);
+    renderAll();
+    if (next === 1) playBellSound();
+    else if (next === 2) playRejectSound();
+    scheduleBackup();
   } catch (error) {
-    showToast('Error updating comment status', 'error');
-  }
-}
-
-// ── Threading ─────────────────────────────────────────────────────────────────
-
-function toggleReplyForm(parentId, forceState) {
-  const form = document.getElementById(`reply-form-${parentId}`);
-  if (!form) return;
-  const show = forceState !== undefined ? forceState : form.style.display === 'none';
-  form.style.display = show ? 'block' : 'none';
-  if (show) {
-    try { form.querySelector('.reply-author').value = localStorage.getItem('author_name') || ''; } catch {}
-    form.querySelector('.reply-text').focus();
+    showToast(error.message || 'Error updating status', 'error');
   }
 }
 
 async function submitReply(parentId) {
-  const form = document.getElementById(`reply-form-${parentId}`);
-  if (!form) return;
-  const author = form.querySelector('.reply-author').value.trim();
-  const text   = form.querySelector('.reply-text').value.trim();
-  if (!author || !text) { showToast('Please fill in your name and reply', 'error'); return; }
-
-  const parent = annotations.find(a => a.id === parentId);
-  if (!parent) return;
-
+  const field = document.querySelector(`[data-draft="reply-${CSS.escape(parentId)}"]`);
+  const text = field ? field.value.trim() : '';
+  const author = authorName();
+  if (!author) { showToast('Enter your name in the comment form first', 'error'); $('authorName').focus(); return; }
+  if (!text) { showToast('Write a reply first', 'error'); return; }
   try {
-    try { localStorage.setItem('author_name', author); } catch {}
-    const response = await fetch(`/api/projects/${projectId}/annotations`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ author, text, timecode: parent.timecode, parent_id: parentId })
-    });
-    if (!response.ok) { const e = await response.json().catch(() => ({})); throw new Error(e.error || 'Error adding reply'); }
-
-    const newReply = await response.json();
-    if (newReply.edit_token) saveAnnotationToken(newReply.id, newReply.edit_token);
-    upsertAnnotation(newReply);
-    toggleReplyForm(parentId, false);
-    form.querySelector('.reply-text').value = '';
-    updateAnnotationsList();
+    const created = await api('POST', `/api/projects/${encodeURIComponent(projectId)}/annotations`,
+      { author, text, parent_id: parentId }, { projectId });
+    EditTokens.set(created.id, created.edit_token);
+    const { edit_token: _token, ...reply } = created;
+    upsertAnnotation(reply);
+    openReplies.delete(parentId);
+    drafts.delete(`reply-${parentId}`);
+    renderList();
     showToast('Reply added', 'success');
+    scheduleBackup();
   } catch (error) {
     showToast(error.message || 'Error adding reply', 'error');
   }
 }
 
-// ── Render ────────────────────────────────────────────────────────────────────
-
-// Re-rendering the list must not wipe reply forms someone is typing into
-function captureReplyForms() {
-  const state = {};
-  const active = document.activeElement;
-  document.querySelectorAll('.reply-form').forEach(form => {
-    if (form.style.display === 'none') return;
-    state[form.id] = {
-      author: form.querySelector('.reply-author').value,
-      text: form.querySelector('.reply-text').value,
-      focus: active && form.contains(active)
-        ? (active.classList.contains('reply-author') ? '.reply-author' : '.reply-text')
-        : null
-    };
-  });
-  return state;
+function startEdit(id) {
+  const a = findAnnotation(id);
+  if (!a || !isOwn(a)) return;
+  editingId = id;
+  editTags = parseTags(a.tags);
+  drafts.set(`edit-${id}`, a.text);
+  renderList();
+  const field = document.querySelector(`[data-draft="edit-${CSS.escape(id)}"]`);
+  if (field) { field.focus(); field.setSelectionRange(field.value.length, field.value.length); }
 }
 
-function restoreReplyForms(state) {
-  Object.entries(state).forEach(([formId, s]) => {
-    const form = document.getElementById(formId);
-    if (!form) return;
-    form.style.display = 'block';
-    form.querySelector('.reply-author').value = s.author;
-    form.querySelector('.reply-text').value = s.text;
-    if (s.focus) form.querySelector(s.focus).focus();
-  });
+async function saveEdit(id) {
+  const a = findAnnotation(id);
+  const field = document.querySelector(`[data-draft="edit-${CSS.escape(id)}"]`);
+  if (!a || !field) return;
+  const text = field.value.trim();
+  if (!text) { showToast('Comment cannot be empty', 'error'); return; }
+  const body = { text, edit_token: EditTokens.get(id) };
+  if (!a.parent_id) body.tags = editTags;
+  try {
+    const updated = await api('PATCH', `/api/annotations/${encodeURIComponent(id)}`, body, { projectId });
+    upsertAnnotation(updated);
+    editingId = null;
+    drafts.delete(`edit-${id}`);
+    renderAll();
+    scheduleBackup();
+  } catch (error) {
+    showToast(error.message || 'Error saving', 'error');
+  }
 }
 
-function updateAnnotationsList() {
-  const list  = document.getElementById('annotationsList');
-  const openForms = captureReplyForms();
-  const roots = annotations.filter(a => !a.parent_id);
-  const replies = (parentId) => annotations.filter(a => a.parent_id === parentId);
+// Move an own comment to the current I/O range, or to the playhead
+async function retimeAnnotation(id) {
+  const a = findAnnotation(id);
+  if (!a || !isOwn(a) || a.parent_id) return;
+  const body = { edit_token: EditTokens.get(id) };
+  if (rangeIn !== null) { body.timecode = rangeIn; body.timecode_end = rangeOut; }
+  else { body.timecode = currentTime(); body.timecode_end = null; }
+  try {
+    const updated = await api('PATCH', `/api/annotations/${encodeURIComponent(id)}`, body, { projectId });
+    upsertAnnotation(updated);
+    repliesOf(id).forEach(r => { r.timecode = updated.timecode; });
+    renderAll();
+    showToast(`Moved to ${formatRange(updated)}`, 'success');
+    scheduleBackup();
+  } catch (error) {
+    showToast(error.message, 'error');
+  }
+}
 
-  // Progress indicator (counts root annotations only)
-  document.getElementById('annotationsCount').textContent = roots.length;
-  const reviewed = roots.filter(a => a.status === 1 || a.status === 2).length;
-  const progressEl = document.getElementById('progressText');
-  progressEl.textContent = roots.length > 0 ? `${reviewed} / ${roots.length} reviewed` : '';
+function selectAnnotation(id, { seek = false, scroll = false } = {}) {
+  selectedId = id;
+  const a = findAnnotation(id);
+  if (a && seek) seekToTime(a.timecode);
+  document.querySelectorAll('.annotation-item.selected').forEach(el => el.classList.remove('selected'));
+  const el = document.querySelector(`.annotation-item[data-id="${CSS.escape(id)}"]`);
+  if (el) {
+    el.classList.add('selected');
+    if (scroll) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }
+}
 
-  if (roots.length === 0) {
-    list.innerHTML = '<p style="color:#9e9e9e;text-align:center;">No comments yet</p>';
+function onListClick(e) {
+  const actionEl = e.target.closest('[data-action]');
+  if (actionEl) {
+    const { action, id } = actionEl.dataset;
+    switch (action) {
+      case 'delete': return deleteAnnotation(id);
+      case 'status': return setStatus(id, Number(actionEl.dataset.status));
+      case 'reply':
+        if (openReplies.has(id)) openReplies.delete(id); else openReplies.add(id);
+        renderList();
+        if (openReplies.has(id)) document.querySelector(`[data-draft="reply-${CSS.escape(id)}"]`)?.focus();
+        return;
+      case 'send-reply': return submitReply(id);
+      case 'cancel-reply': openReplies.delete(id); drafts.delete(`reply-${id}`); return renderList();
+      case 'edit': return startEdit(id);
+      case 'save-edit': return saveEdit(id);
+      case 'cancel-edit': editingId = null; drafts.delete(`edit-${id}`); return renderList();
+      case 'retime': return retimeAnnotation(id);
+      case 'frame': return captureFrameFor(id);
+      case 'edit-tag': {
+        const tag = actionEl.dataset.tag;
+        editTags = editTags.includes(tag) ? editTags.filter(t => t !== tag) : [...editTags, tag];
+        actionEl.classList.toggle('active', editTags.includes(tag));
+        return;
+      }
+    }
     return;
   }
+  const seekEl = e.target.closest('[data-seek]');
+  if (seekEl) {
+    const card = seekEl.closest('.annotation-item');
+    if (card) selectAnnotation(card.dataset.id);
+    return seekToTime(Number(seekEl.dataset.seek));
+  }
+  if (e.target.closest('input, textarea, button, a, label')) return;
+  const card = e.target.closest('.annotation-item');
+  if (card) selectAnnotation(card.dataset.id);
+}
 
-  list.innerHTML = roots.map(annotation => {
-    const status     = annotation.status ?? 0;
-    const statusClass = status === 1 ? 'accepted' : status === 2 ? 'rejected' : 'pending';
-    const canDelete  = !!getAnnotationToken(annotation.id);
-    const threadReplies = replies(annotation.id);
+// ── Filters & bulk actions ────────────────────────────────────────────────────
 
-    const repliesHtml = threadReplies.map(reply => {
-      const canDeleteReply = !!getAnnotationToken(reply.id);
-      return `
-        <div class="reply-item">
+function setupFilters() {
+  $('filterSearch').addEventListener('input', (e) => { filters.search = e.target.value.trim().toLowerCase(); renderList(); });
+  $('filterTag').addEventListener('change', (e) => { filters.tag = e.target.value; renderList(); });
+  $('filterAuthor').addEventListener('change', (e) => { filters.author = e.target.value; renderList(); });
+  $('sortOrder').addEventListener('change', (e) => { filters.sort = e.target.value; renderList(); });
+  $('statusFilters').addEventListener('click', (e) => {
+    const chip = e.target.closest('[data-filter-status]');
+    if (!chip) return;
+    filters.status = chip.dataset.filterStatus;
+    renderList();
+  });
+  $('bulkAll').addEventListener('change', (e) => {
+    visibleRoots().forEach(a => e.target.checked ? checked.add(a.id) : checked.delete(a.id));
+    renderList();
+  });
+  document.querySelector('.bulk-actions').addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-bulk]');
+    if (btn) runBulk(btn.dataset.bulk);
+  });
+}
+
+function renderFilterOptions() {
+  const tagSel = $('filterTag');
+  if (!tagsConfig.includes(filters.tag)) filters.tag = '';
+  tagSel.innerHTML = '<option value="">All tags</option>' + tagsConfig.map(t => `<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join('');
+  tagSel.value = filters.tag;
+  tagSel.style.display = tagsConfig.length ? '' : 'none';
+
+  const authors = [...new Set(roots().map(a => a.author))].sort((a, b) => a.localeCompare(b));
+  if (!authors.includes(filters.author)) filters.author = '';
+  const authorSel = $('filterAuthor');
+  authorSel.innerHTML = '<option value="">All authors</option>' + authors.map(a => `<option value="${escapeHtml(a)}">${escapeHtml(a)}</option>`).join('');
+  authorSel.value = filters.author;
+}
+
+function visibleRoots() {
+  let list = roots().filter(a => {
+    if (filters.status !== 'all' && (a.status || 0) !== Number(filters.status)) return false;
+    if (filters.tag && !parseTags(a.tags).includes(filters.tag)) return false;
+    if (filters.author && a.author !== filters.author) return false;
+    if (filters.search) {
+      const hay = [a.author, a.text, ...repliesOf(a.id).map(r => `${r.author} ${r.text}`)].join(' ').toLowerCase();
+      if (!hay.includes(filters.search)) return false;
+    }
+    return true;
+  });
+  if (filters.sort === 'newest') {
+    list = [...list].sort((a, b) => (parseDbDate(b.created_at) || 0) - (parseDbDate(a.created_at) || 0));
+  }
+  return list;
+}
+
+async function runBulk(action) {
+  const ids = [...checked].filter(id => findAnnotation(id));
+  if (!ids.length) { showToast('Select comments first', 'info'); return; }
+  if (action === 'delete' && !confirm(`Delete ${ids.length} comment(s) and their replies?`)) return;
+  const body = action === 'delete'
+    ? { ids, action: 'delete' }
+    : { ids, action: 'status', status: Number(action), by: authorName() || undefined };
+  try {
+    await api('POST', `/api/projects/${encodeURIComponent(projectId)}/annotations/bulk`, body, { projectId });
+    const fresh = await api('GET', `/api/projects/${encodeURIComponent(projectId)}`, undefined, { projectId });
+    annotations = fresh.annotations;
+    checked.clear();
+    renderAll();
+    showToast(`Updated ${ids.length} comment(s)`, 'success');
+    scheduleBackup();
+  } catch (e) {
+    showToast(e.message, 'error');
+  }
+}
+
+function updateBulkBar() {
+  const visible = visibleRoots();
+  const n = [...checked].filter(id => findAnnotation(id)).length;
+  $('bulkCount').textContent = n ? `${n} selected` : 'Select all';
+  const all = $('bulkAll');
+  all.checked = visible.length > 0 && visible.every(a => checked.has(a.id));
+  all.indeterminate = !all.checked && visible.some(a => checked.has(a.id));
+  document.querySelectorAll('.bulk-actions button').forEach(b => { b.disabled = !n; });
+}
+
+// ── Render: comments list ─────────────────────────────────────────────────────
+
+// Text typed into reply/edit fields survives re-renders caused by live updates
+const drafts = new Map();
+
+function captureDrafts() {
+  const active = document.activeElement;
+  let focus = null;
+  document.querySelectorAll('[data-draft]').forEach(el => {
+    drafts.set(el.dataset.draft, el.value);
+    if (el === active) focus = { key: el.dataset.draft, start: el.selectionStart, end: el.selectionEnd };
+  });
+  return focus;
+}
+
+function restoreDrafts(focus) {
+  document.querySelectorAll('[data-draft]').forEach(el => {
+    if (drafts.has(el.dataset.draft)) el.value = drafts.get(el.dataset.draft);
+  });
+  if (focus) {
+    const el = document.querySelector(`[data-draft="${CSS.escape(focus.key)}"]`);
+    if (el) { el.focus(); try { el.setSelectionRange(focus.start, focus.end); } catch {} }
+  }
+}
+
+function renderAll() {
+  renderFilterOptions();
+  renderList();
+  renderTimeline();
+}
+
+function statusLine(a) {
+  if (!a.status) return '';
+  const s = STATUS[a.status];
+  const by = a.status_by ? ` by ${escapeHtml(a.status_by)}` : '';
+  const when = a.status_at ? ` · ${escapeHtml(timeAgo(a.status_at))}` : '';
+  return `<div class="status-line status-${s.key}">${s.icon} ${s.label}${by}${when}</div>`;
+}
+
+function tagPillsHtml(tagsJson) {
+  const tags = parseTags(tagsJson);
+  if (!tags.length) return '';
+  return `<div class="annotation-tags">${tags.map(t =>
+    `<span class="tag-pill" style="background:${tagColor(t, tagsConfig)}">${escapeHtml(t)}</span>`).join('')}</div>`;
+}
+
+function replyHtml(r) {
+  const id = escapeHtml(r.id);
+  const own = isOwn(r);
+  const editing = editingId === r.id;
+  return `
+    <div class="reply-item" data-reply="${id}">
+      <div class="annotation-meta">
+        <span class="annotation-author">${escapeHtml(r.author)}</span>
+        <span class="meta-muted">${escapeHtml(timeAgo(r.created_at))}${r.edited_at ? ' · edited' : ''}</span>
+      </div>
+      ${editing ? editFormHtml(r) : `<div class="annotation-text">${escapeHtml(r.text)}</div>`}
+      ${editing ? '' : `<div class="mini-actions">
+        ${own ? `<button type="button" data-action="edit" data-id="${id}">Edit</button>` : ''}
+        ${own || perms.moderate ? `<button type="button" data-action="delete" data-id="${id}">Delete</button>` : ''}
+      </div>`}
+    </div>`;
+}
+
+function editFormHtml(a) {
+  const id = escapeHtml(a.id);
+  const tagChips = !a.parent_id && tagsConfig.length
+    ? `<div class="tag-selector">${tagsConfig.map(t => `<button type="button" class="tag-chip ${editTags.includes(t) ? 'active' : ''}"
+         data-action="edit-tag" data-id="${id}" data-tag="${escapeHtml(t)}" style="--tag-color:${tagColor(t, tagsConfig)}">${escapeHtml(t)}</button>`).join('')}</div>`
+    : '';
+  return `
+    <div class="edit-form">
+      <textarea rows="3" maxlength="2000" data-draft="edit-${id}" data-submit="edit" data-id="${id}"></textarea>
+      ${tagChips}
+      <div class="reply-form-actions">
+        <button type="button" class="reply-send-btn" data-action="save-edit" data-id="${id}">Save</button>
+        <button type="button" class="reply-cancel-btn" data-action="cancel-edit" data-id="${id}">Cancel</button>
+        ${!a.parent_id ? `<button type="button" class="reply-cancel-btn" data-action="retime" data-id="${id}"
+            title="Move this comment to the playhead, or to the I/O range if one is set">⏱ Move here</button>` : ''}
+      </div>
+    </div>`;
+}
+
+function cardHtml(a) {
+  const id = escapeHtml(a.id);
+  const status = a.status || 0;
+  const s = STATUS[status];
+  const own = isOwn(a);
+  const threadReplies = repliesOf(a.id);
+  const editing = editingId === a.id;
+  const thumb = thumbnailHtml(a, storyboard, 112);
+
+  const statusButtons = perms.review ? [3, 1, 2].map(code => `
+    <button type="button" class="status-btn status-${STATUS[code].key} ${status === code ? 'active' : ''}"
+            data-action="status" data-status="${code}" data-id="${id}" title="${STATUS[code].label} (${code})">${STATUS_BUTTON_LABELS[code]}</button>`).join('') : '';
+
+  return `
+    <div class="annotation-item status-${s.key} ${selectedId === a.id ? 'selected' : ''}" data-id="${id}">
+      <div class="card-top">
+        ${perms.review ? `<input type="checkbox" class="bulk-check" data-check="${id}" ${checked.has(a.id) ? 'checked' : ''} title="Select">` : ''}
+        ${thumb ? `<span class="card-thumb" data-seek="${Number(a.timecode)}" title="Jump to ${formatTime(a.timecode)}">${thumb}</span>` : ''}
+        <div class="card-main">
           <div class="annotation-meta">
-            <span class="annotation-author">${escapeHtml(reply.author)}</span>
-            <span class="reply-label">reply</span>
+            <span class="annotation-author">${escapeHtml(a.author)}</span>
+            <span class="annotation-timecode" data-seek="${Number(a.timecode)}">${escapeHtml(formatRange(a))}</span>
           </div>
-          <div class="annotation-text">${escapeHtml(reply.text)}</div>
-          <div class="annotation-actions">
-            <button class="delete-btn" data-action="delete" data-id="${reply.id}"
-              ${!canDeleteReply ? 'disabled title="You can only delete your own replies"' : ''}>
-              🗑️ Delete
-            </button>
-          </div>
-        </div>
-      `;
-    }).join('');
-
-    return `
-      <div class="annotation-item ${statusClass}" data-id="${annotation.id}">
-        <div class="annotation-meta">
-          <span class="annotation-author">${escapeHtml(annotation.author)}</span>
-          <span class="annotation-timecode" data-timecode="${Number(annotation.timecode)}">${formatTime(annotation.timecode)}</span>
-        </div>
-        <div class="annotation-text">${escapeHtml(annotation.text)}</div>
-        ${renderTagPills(annotation.tags)}
-        <div class="annotation-actions">
-          <button class="delete-btn" data-action="delete" data-id="${annotation.id}"
-            ${!canDelete ? 'disabled title="You can only delete your own comments"' : ''}>
-            🗑️ Delete
-          </button>
-          <button class="reject-btn ${status === 2 ? 'active' : ''}" data-action="reject" data-id="${annotation.id}">✗ Reject</button>
-          <button class="accept-btn ${status === 1 ? 'active' : ''}" data-action="accept" data-id="${annotation.id}">✓ Accept</button>
-          <button class="reply-btn" data-action="reply" data-id="${annotation.id}">💬 Reply${threadReplies.length ? ` (${threadReplies.length})` : ''}</button>
-        </div>
-        ${repliesHtml ? `<div class="replies-thread">${repliesHtml}</div>` : ''}
-        <div class="reply-form" id="reply-form-${annotation.id}" style="display:none;">
-          <input type="text" class="reply-author" placeholder="Your name" maxlength="100" />
-          <textarea class="reply-text" placeholder="Your reply..." rows="2" maxlength="2000"></textarea>
-          <div class="reply-form-actions">
-            <button class="reply-send-btn" data-action="send-reply" data-id="${annotation.id}">Send</button>
-            <button class="reply-cancel-btn" data-action="cancel-reply" data-id="${annotation.id}">Cancel</button>
-          </div>
+          ${editing ? editFormHtml(a) : `<div class="annotation-text">${escapeHtml(a.text)}</div>${tagPillsHtml(a.tags)}`}
+          ${statusLine(a)}
+          <div class="meta-muted">${escapeHtml(timeAgo(a.created_at))}${a.edited_at ? ' · edited' : ''}</div>
         </div>
       </div>
-    `;
-  }).join('');
-  restoreReplyForms(openForms);
+      <div class="annotation-actions">
+        ${statusButtons}
+        <button type="button" class="reply-btn" data-action="reply" data-id="${id}">💬 Reply${threadReplies.length ? ` (${threadReplies.length})` : ''}</button>
+        ${own && !editing ? `<button type="button" class="reply-btn icon-btn" data-action="edit" data-id="${id}" title="Edit (E)">✏️</button>` : ''}
+        ${own && attachFrame ? `<button type="button" class="reply-btn icon-btn" data-action="frame" data-id="${id}" title="Attach the frame at this timecode">📷</button>` : ''}
+        ${own || perms.moderate ? `<button type="button" class="delete-btn icon-btn" data-action="delete" data-id="${id}" title="Delete (Del)">🗑️</button>` : ''}
+      </div>
+      ${threadReplies.length ? `<div class="replies-thread">${threadReplies.map(replyHtml).join('')}</div>` : ''}
+      ${openReplies.has(a.id) ? `
+        <div class="reply-form">
+          <textarea rows="2" maxlength="2000" placeholder="Reply as ${escapeHtml(authorName() || '…')} — Enter to send"
+                    data-draft="reply-${id}" data-submit="reply" data-id="${id}"></textarea>
+          <div class="reply-form-actions">
+            <button type="button" class="reply-send-btn" data-action="send-reply" data-id="${id}">Send</button>
+            <button type="button" class="reply-cancel-btn" data-action="cancel-reply" data-id="${id}">Cancel</button>
+          </div>
+        </div>` : ''}
+    </div>`;
+}
+
+function renderStatusFilters() {
+  const all = roots();
+  const chip = (value, label, count, color) =>
+    `<button type="button" class="filter-chip ${filters.status === String(value) ? 'active' : ''}" data-filter-status="${value}"
+       ${color ? `style="--chip-color:${color}"` : ''}>${label} <span>${count}</span></button>`;
+  $('statusFilters').innerHTML = chip('all', 'All', all.length) +
+    STATUS_ORDER.map(code => chip(code, `${STATUS[code].icon} ${STATUS[code].label}`,
+      all.filter(a => (a.status || 0) === code).length, STATUS[code].color)).join('');
+}
+
+function renderList() {
+  const list = $('annotationsList');
+  const focus = captureDrafts();
+  const all = roots();
+
+  $('annotationsCount').textContent = all.length;
+  const reviewed = all.filter(a => a.status === 1 || a.status === 2).length;
+  $('progressText').textContent = all.length ? `${reviewed} / ${all.length} reviewed` : '';
+  renderStatusFilters();
+
+  const visible = visibleRoots();
+  if (!all.length) list.innerHTML = '<p class="empty-list">No comments yet</p>';
+  else if (!visible.length) list.innerHTML = '<p class="empty-list">No comments match the filters</p>';
+  else list.innerHTML = visible.map(cardHtml).join('');
+
+  restoreDrafts(focus);
+  if (perms.review) updateBulkBar();
 }
 
 // ── Timeline ──────────────────────────────────────────────────────────────────
 
-function clusterAnnotations(annotations, maxTime) {
-  if (!annotations.length) return [];
+function timelineMax() {
+  if (videoDuration > 0) return videoDuration;
+  if (storyboard && storyboard.duration) return storyboard.duration;
+  const r = roots();
+  return r.length ? Math.max(...r.map(a => a.timecode_end || a.timecode)) + 60 : 0;
+}
+
+function clusterAnnotations(list, maxTime) {
   const RADIUS = 2;
   const clusters = [];
-  annotations.forEach(annotation => {
+  list.forEach(annotation => {
     const position = (annotation.timecode / maxTime) * 100;
     const found = clusters.find(c => Math.abs(c.center - position) < RADIUS);
     if (found) {
@@ -563,62 +1008,102 @@ function clusterAnnotations(annotations, maxTime) {
   return clusters;
 }
 
-function updateTimeline() {
-  const timeline = document.getElementById('timeline');
-  // Only root annotations appear on the timeline; replies are contextual
-  const roots = annotations.filter(a => !a.parent_id);
+let timelineClusters = [];
 
-  if (!roots.length) { timeline.innerHTML = '<div class="timeline-line"></div>'; return; }
-
-  const maxTime = videoDuration > 0 ? videoDuration : Math.max(...roots.map(a => a.timecode)) + 60;
-  const clusters = clusterAnnotations(roots, maxTime);
+function renderTimeline() {
+  const timeline = $('timeline');
+  const list = roots();
+  const maxTime = timelineMax();
   let html = '<div class="timeline-line"></div>';
 
-  clusters.forEach((cluster, idx) => {
-    if (cluster.annotations.length > 1) {
-      const hasAccepted = cluster.annotations.some(a => a.status === 1);
-      const hasRejected = cluster.annotations.some(a => a.status === 2);
-      const hasPending  = cluster.annotations.some(a => !a.status);
-      let color = '#ffd700';
-      if (hasAccepted && !hasRejected && !hasPending) color = '#52b788';
-      else if (hasRejected && !hasAccepted && !hasPending) color = '#e74c3c';
-      const titles = cluster.annotations.map(a => `${escapeHtml(a.author)}: ${escapeHtml(a.text)}`).join('\n');
-      html += `<div class="timeline-cluster" data-cluster="${idx}"
-                    style="left:${cluster.position}%;background-color:${color};"
-                    onmouseenter="expandCluster(${idx},${cluster.position})"
-                    title="${titles}">
-                 <span class="cluster-count">${cluster.annotations.length}</span>
-               </div>`;
-    } else {
-      const a = cluster.annotations[0];
-      const color = a.status === 1 ? '#52b788' : a.status === 2 ? '#e74c3c' : '#ffd700';
-      html += `<div class="timeline-marker"
-                    style="left:${cluster.position}%;background-color:${color};"
-                    onclick="seekToTime(${Number(a.timecode)})"
-                    title="${escapeHtml(a.author)}: ${escapeHtml(a.text)} (${formatTime(a.timecode)})">
-               </div>`;
+  if (maxTime > 0) {
+    // Ranges as bars under the markers
+    list.filter(a => a.timecode_end != null).forEach(a => {
+      const left = (a.timecode / maxTime) * 100;
+      const width = Math.max(0.4, ((a.timecode_end - a.timecode) / maxTime) * 100);
+      html += `<div class="timeline-range" data-seek="${Number(a.timecode)}" style="left:${left}%;width:${width}%;background:${STATUS[a.status || 0].color}"
+                    title="${escapeHtml(`${a.author}: ${a.text} (${formatRange(a)})`)}"></div>`;
+    });
+    if (rangeIn !== null) {
+      const end = rangeOut !== null ? rangeOut : rangeIn;
+      html += `<div class="timeline-draft-range" style="left:${(rangeIn / maxTime) * 100}%;width:${Math.max(0.3, ((end - rangeIn) / maxTime) * 100)}%"></div>`;
     }
-  });
 
+    timelineClusters = clusterAnnotations(list, maxTime);
+    timelineClusters.forEach((cluster, idx) => {
+      if (cluster.annotations.length > 1) {
+        const statuses = new Set(cluster.annotations.map(a => a.status || 0));
+        const color = statuses.size === 1 ? STATUS[[...statuses][0]].color : '#ffd700';
+        const titles = cluster.annotations.map(a => `${a.author}: ${a.text}`).join('\n');
+        html += `<div class="timeline-cluster" data-cluster="${idx}" style="left:${cluster.position}%;background-color:${color};"
+                      title="${escapeHtml(titles)}"><span class="cluster-count">${cluster.annotations.length}</span></div>`;
+      } else {
+        const a = cluster.annotations[0];
+        html += `<div class="timeline-marker ${selectedId === a.id ? 'selected' : ''}" data-marker="${escapeHtml(a.id)}"
+                      style="left:${cluster.position}%;background-color:${STATUS[a.status || 0].color};"
+                      title="${escapeHtml(`${a.author}: ${a.text} (${formatRange(a)})`)}"></div>`;
+      }
+    });
+  }
+  html += '<div class="timeline-playhead" id="playhead"></div><div class="timeline-preview" id="timelinePreview"></div>';
   timeline.innerHTML = html;
-  timeline.dataset.clusters = JSON.stringify(clusters.map(c => ({
-    position: c.position,
-    annotations: c.annotations.map(a => ({ id: a.id, timecode: a.timecode, status: a.status ?? 0, author: a.author, text: a.text }))
-  })));
+  tick();
 }
 
-function expandCluster(clusterIndex, centerPos) {
-  const timeline = document.getElementById('timeline');
+function setupTimeline() {
+  const timeline = $('timeline');
+  const jumpTo = (id) => {
+    const a = findAnnotation(id);
+    if (a) { selectAnnotation(a.id, { scroll: true }); seekToTime(a.timecode); renderTimeline(); }
+  };
+  timeline.addEventListener('click', (e) => {
+    const marker = e.target.closest('[data-marker]');
+    if (marker) return jumpTo(marker.dataset.marker);
+    const mini = e.target.closest('[data-mini]');
+    if (mini) return jumpTo(mini.dataset.mini);
+    const range = e.target.closest('[data-seek]');
+    if (range) return seekToTime(Number(range.dataset.seek));
+    if (e.target.closest('.timeline-cluster, .cluster-wrapper')) return;
+    const rect = timeline.getBoundingClientRect();
+    const max = timelineMax();
+    if (max > 0) seekToTime(((e.clientX - rect.left) / rect.width) * max);
+  });
+
+  timeline.addEventListener('mouseover', (e) => {
+    const cluster = e.target.closest('.timeline-cluster');
+    if (cluster) expandCluster(Number(cluster.dataset.cluster));
+  });
+
+  // Hover preview from the storyboard
+  timeline.addEventListener('mousemove', (e) => {
+    const preview = $('timelinePreview');
+    const max = timelineMax();
+    if (!preview) return;
+    if (!storyboard || max <= 0 || e.target.closest('.cluster-wrapper, .timeline-marker, .timeline-cluster')) {
+      preview.style.display = 'none';
+      return;
+    }
+    const rect = timeline.getBoundingClientRect();
+    const x = Math.min(rect.width, Math.max(0, e.clientX - rect.left));
+    const t = (x / rect.width) * max;
+    preview.innerHTML = `${Storyboard.html(storyboard, t, 160)}<span>${formatTime(t)}</span>`;
+    preview.style.left = `${Math.min(rect.width - 84, Math.max(84, x))}px`;
+    preview.style.display = 'block';
+  });
+  timeline.addEventListener('mouseleave', () => { const p = $('timelinePreview'); if (p) p.style.display = 'none'; });
+}
+
+function expandCluster(clusterIndex) {
+  const timeline = $('timeline');
   timeline.querySelector('.cluster-wrapper')?.remove();
-  const clustersData = JSON.parse(timeline.dataset.clusters || '[]');
-  const cluster = clustersData[clusterIndex];
+  const cluster = timelineClusters[clusterIndex];
   if (!cluster || cluster.annotations.length <= 1) return;
   const clusterEl = timeline.querySelector(`[data-cluster="${clusterIndex}"]`);
   if (!clusterEl) return;
 
   const wrapper = document.createElement('div');
   wrapper.className = 'cluster-wrapper';
-  wrapper.style.cssText = `position:absolute;left:calc(${centerPos}% - 75px);top:-50px;width:150px;height:160px;z-index:10;`;
+  wrapper.style.cssText = `position:absolute;left:calc(${cluster.position}% - 75px);top:-50px;width:150px;height:160px;z-index:10;`;
   wrapper.onmouseleave = () => {
     wrapper.remove();
     clusterEl.style.opacity = '1';
@@ -627,12 +1112,11 @@ function expandCluster(clusterIndex, centerPos) {
 
   const R = 40, step = (Math.PI * 2) / cluster.annotations.length;
   cluster.annotations.forEach((a, i) => {
-    const color = a.status === 1 ? '#52b788' : a.status === 2 ? '#e74c3c' : '#ffd700';
     const dot = document.createElement('div');
     dot.className = 'timeline-mini-marker';
-    dot.style.cssText = `position:absolute;left:calc(50% + ${Math.cos(step*i)*R}px);top:calc(50% + ${Math.sin(step*i)*R}px);width:14px;height:14px;background:${color};border:2px solid #1a1a1a;border-radius:50%;cursor:pointer;transform:translate(-50%,-50%);z-index:11;`;
+    dot.dataset.mini = a.id;
+    dot.style.cssText = `position:absolute;left:calc(50% + ${Math.cos(step * i) * R}px);top:calc(50% + ${Math.sin(step * i) * R}px);width:14px;height:14px;background:${STATUS[a.status || 0].color};border:2px solid #1a1a1a;border-radius:50%;cursor:pointer;transform:translate(-50%,-50%);z-index:11;`;
     dot.title = `${a.author}: ${a.text}`;
-    dot.onclick = (e) => { e.stopPropagation(); seekToTime(a.timecode); };
     wrapper.appendChild(dot);
   });
 
@@ -644,120 +1128,289 @@ function expandCluster(clusterIndex, centerPos) {
 // ── Real-time collaboration ───────────────────────────────────────────────────
 
 function connectSocket() {
+  if (socket) return;
   socket = io();
   let connectedOnce = false;
 
   // Rooms are per-connection: re-join after every (re)connect and catch up on missed changes
   socket.on('connect', () => {
     socket.emit('join-project', projectId);
-    if (connectedOnce) resyncAnnotations();
+    if (connectedOnce) resync();
     connectedOnce = true;
   });
 
   socket.on('annotation:created', (annotation) => {
-    if (annotations.find(a => a.id === annotation.id)) return;
+    if (findAnnotation(annotation.id)) return;
     upsertAnnotation(annotation);
-    updateAnnotationsList();
-    updateTimeline();
-    if (!annotation.parent_id) showToast(`New comment from ${annotation.author}`, 'info');
-    else showToast(`${annotation.author} replied to a comment`, 'info');
+    renderAll();
+    showToast(annotation.parent_id ? `${annotation.author} replied to a comment` : `New comment from ${annotation.author}`, 'info');
+    scheduleBackup();
+  });
+
+  socket.on('annotation:updated', (annotation) => {
+    upsertAnnotation({ ...annotation, _shotVersion: annotation.has_screenshot ? Date.now() : undefined });
+    if (!annotation.parent_id) repliesOf(annotation.id).forEach(r => { r.timecode = annotation.timecode; });
+    renderAll();
+    scheduleBackup();
   });
 
   socket.on('annotation:deleted', ({ id }) => {
-    if (!annotations.find(a => a.id === id)) return;
+    if (!findAnnotation(id)) return;
     annotations = annotations.filter(a => a.id !== id);
-    updateAnnotationsList();
-    updateTimeline();
+    renderAll();
+    scheduleBackup();
   });
 
   socket.on('thread:deleted', ({ parentId }) => {
     annotations = annotations.filter(a => a.id !== parentId && a.parent_id !== parentId);
-    updateAnnotationsList();
-    updateTimeline();
+    if (selectedId === parentId) selectedId = null;
+    checked.delete(parentId);
+    renderAll();
+    scheduleBackup();
   });
 
-  socket.on('annotation:status', ({ id, status }) => {
-    const a = annotations.find(a => a.id === id);
-    if (!a || a.status === status) return;
-    a.status = status;
-    updateAnnotationsList();
-    updateTimeline();
+  socket.on('annotation:status', (update) => {
+    const a = findAnnotation(update.id);
+    if (!a) return;
+    Object.assign(a, update);
+    renderAll();
+    scheduleBackup();
+  });
+
+  socket.on('project:updated', (updated) => {
+    project = { ...project, ...updated };
+    tagsConfig = parseTags(project.tags_config);
+    renderHeader();
+    renderTagSelector();
+    renderAll();
+    scheduleBackup();
   });
 
   socket.on('project:deleted', () => {
-    socket.disconnect();
-    showToast('This project has been deleted by an administrator', 'error');
-    document.getElementById('project-content').style.display = 'none';
-    const loading = document.getElementById('loading');
-    loading.textContent = 'This project has been deleted.';
-    loading.style.display = 'block';
+    showToast('This project has been deleted', 'error');
+    $('project-content').style.display = 'none';
+    showRestorePanel();
   });
 }
 
-async function resyncAnnotations() {
+async function resync() {
   try {
-    const response = await fetch(`/api/projects/${projectId}`);
-    if (!response.ok) return;
-    const data = await response.json();
+    const data = await api('GET', `/api/projects/${encodeURIComponent(projectId)}`, undefined, { projectId });
     annotations = data.annotations || [];
-    updateAnnotationsList();
-    updateTimeline();
+    project = data.project;
+    renderAll();
+    scheduleBackup();
   } catch {}
 }
 
-// ── Export modal ──────────────────────────────────────────────────────────────
+// ── Modals ────────────────────────────────────────────────────────────────────
 
-function openExportModal()  { document.getElementById('export-modal').style.display = 'flex'; }
-function closeExportModal(e) {
-  if (!e || e.target === document.getElementById('export-modal')) {
-    document.getElementById('export-modal').style.display = 'none';
-  }
-}
-function triggerExport() {
-  const fps = document.getElementById('exportFps').value;
-  const a = document.createElement('a');
-  a.href = `/api/projects/${projectId}/export/premiere?fps=${fps}`;
-  a.download = '';
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-}
+function openModal(id) { $(id).style.display = 'flex'; }
+function closeModals() { document.querySelectorAll('[data-modal]').forEach(m => { m.style.display = 'none'; }); }
+function anyModalOpen() { return [...document.querySelectorAll('[data-modal]')].some(m => m.style.display === 'flex'); }
 
-// ── Utilities ─────────────────────────────────────────────────────────────────
-
-function seekToTime(seconds) {
-  if (player?.seekTo) {
-    try { player.seekTo(seconds, true); player.playVideo(); } catch {}
-  }
-}
-
-function extractVideoId(input) {
-  let url;
-  try { url = new URL(String(input).trim()); } catch { return null; }
-  const host = url.hostname.toLowerCase().replace(/^(www\.|m\.|music\.)/, '');
-  let id = null;
-  if (host === 'youtu.be') id = url.pathname.split('/')[1];
-  else if (host === 'youtube.com' || host === 'youtube-nocookie.com') {
-    if (url.pathname === '/watch') id = url.searchParams.get('v');
-    else {
-      const [, kind, value] = url.pathname.split('/');
-      if (['embed', 'v', 'shorts', 'live'].includes(kind)) id = value;
+function setupModals() {
+  document.querySelectorAll('[data-modal]').forEach(modal => {
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal || e.target.closest('[data-close]')) modal.style.display = 'none';
+    });
+  });
+  document.addEventListener('click', async (e) => {
+    const btn = e.target.closest('[data-copy]');
+    if (!btn) return;
+    if (await copyText($(btn.dataset.copy).value)) {
+      const old = btn.textContent; btn.textContent = 'Copied!';
+      setTimeout(() => { btn.textContent = old; }, 1500);
     }
+  });
+
+  $('shareBtn').addEventListener('click', () => {
+    const base = `${window.location.origin}/project/${encodeURIComponent(projectId)}`;
+    $('reviewerLink').value = base;
+    const showEditor = perms.moderate && project.editor_token;
+    $('editorLinkBlock').style.display = showEditor ? '' : 'none';
+    if (showEditor) $('editorLink').value = `${base}#key=${project.editor_token}`;
+    openModal('share-modal');
+  });
+
+  $('settingsBtn').addEventListener('click', () => {
+    $('setTitle').value = project.title || '';
+    $('setDescription').value = project.description || '';
+    $('setTags').value = tagsConfig.join(', ');
+    openModal('settings-modal');
+  });
+  $('saveSettings').addEventListener('click', async () => {
+    try {
+      const updated = await api('PATCH', `/api/projects/${encodeURIComponent(projectId)}`, {
+        title: $('setTitle').value, description: $('setDescription').value, tags_config: $('setTags').value
+      }, { projectId });
+      project = { ...project, ...updated };
+      tagsConfig = parseTags(project.tags_config);
+      renderHeader();
+      renderTagSelector();
+      renderAll();
+      closeModals();
+      showToast('Settings saved', 'success');
+      scheduleBackup();
+    } catch (e) { showToast(e.message, 'error'); }
+  });
+
+  $('helpBtn').addEventListener('click', () => openModal('help-modal'));
+  setupExportModal();
+}
+
+const EXPORT_HELP = {
+  edl: `<h4>Import into DaVinci Resolve</h4>
+    <ol class="tutorial-steps">
+      <li>Pick the frame rate and start timecode of your timeline (Resolve timelines start at <strong>01:00:00:00</strong> by default) and click <strong>Download</strong>.</li>
+      <li>In the <strong>Media Pool</strong>, right-click your timeline → <strong>Timelines → Import → Timeline Markers from EDL…</strong> and choose the file.</li>
+      <li>Markers appear on the timeline colored by status (or tag). Ranges become duration markers; the comment is the marker name.</li>
+    </ol>`,
+  xml: `<h4>Import into Adobe Premiere Pro</h4>
+    <ol class="tutorial-steps">
+      <li>Pick your frame rate and click <strong>Download</strong>.</li>
+      <li><strong>File → Import…</strong> and select the XML. Premiere creates a sequence <em>“… (review markers)”</em> that carries all comments as markers.</li>
+      <li>Drop the reviewed cut (the same render that went to YouTube) at the start of that sequence — the markers line up with the picture. Browse them in <strong>Window → Markers</strong>.</li>
+    </ol>
+    <div class="tutorial-note">Marker colors are not transferred to Premiere. For comments shown right over the picture, use the SRT export.</div>`,
+  srt: `<h4>Show comments on screen</h4>
+    <ol class="tutorial-steps">
+      <li>Click <strong>Download</strong>. Each comment becomes a subtitle (3 s, or the full range): <em>[Author] text</em>, replies below.</li>
+      <li><strong>Premiere Pro:</strong> File → Import the .srt and drag it onto the timeline at the start of the cut — it becomes a caption track.</li>
+      <li><strong>DaVinci Resolve:</strong> import the .srt into the Media Pool and drag it onto the timeline — it lands on a subtitle track.</li>
+    </ol>
+    <div class="tutorial-note">Subtitles are timed from the start of the video, so place them where the cut starts.</div>`,
+  csv: `<h4>Spreadsheet</h4>
+    <p class="export-hint">Timecodes, authors, comments, tags, status and replies — opens in Excel, Google Sheets or Numbers.</p>`
+};
+
+function setupExportModal() {
+  const saved = lsGet('ofa_export', {}) || {};
+  if (saved.format) $('exportFormat').value = saved.format;
+  if (saved.fps) $('exportFps').value = saved.fps;
+  if (saved.start) $('exportStart').value = saved.start;
+  if (saved.color) $('exportColor').value = saved.color;
+
+  $('exportStatuses').innerHTML = STATUS_ORDER.map(code =>
+    `<label class="option-check"><input type="checkbox" value="${code}" checked> ${STATUS[code].icon} ${STATUS[code].label}</label>`).join('');
+
+  const update = () => {
+    const format = $('exportFormat').value;
+    const show = { fps: format !== 'srt', start: format !== 'srt', color: format === 'edl' };
+    document.querySelectorAll('.export-grid [data-for]').forEach(el => { el.style.display = show[el.dataset.for] ? '' : 'none'; });
+    $('exportHelp').innerHTML = EXPORT_HELP[format];
+    lsSet('ofa_export', { format, fps: $('exportFps').value, start: $('exportStart').value, color: $('exportColor').value });
+  };
+  ['exportFormat', 'exportFps', 'exportStart', 'exportColor'].forEach(id => $(id).addEventListener('change', update));
+  update();
+
+  $('exportBtn').addEventListener('click', () => openModal('export-modal'));
+  $('exportDownload').addEventListener('click', () => {
+    const format = $('exportFormat').value;
+    const statuses = [...document.querySelectorAll('#exportStatuses input:checked')].map(i => i.value);
+    if (!statuses.length) { showToast('Select at least one status', 'error'); return; }
+    const params = new URLSearchParams({ fps: $('exportFps').value, start: $('exportStart').value, color: $('exportColor').value });
+    if (statuses.length < STATUS_ORDER.length) params.set('statuses', statuses.join(','));
+    const a = document.createElement('a');
+    a.href = `/api/projects/${encodeURIComponent(projectId)}/export/${format}?${params}`;
+    a.download = '';
+    document.body.appendChild(a); a.click(); a.remove();
+  });
+}
+
+// ── Keyboard ──────────────────────────────────────────────────────────────────
+
+function setupKeyboard() {
+  // Enter sends in every comment field; Shift+Enter adds a line
+  document.addEventListener('keydown', (e) => {
+    const field = e.target;
+    if (field.id === 'commentText' || (field.dataset && field.dataset.submit)) {
+      if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+        e.preventDefault();
+        if (field.id === 'commentText') addAnnotation();
+        else if (field.dataset.submit === 'reply') submitReply(field.dataset.id);
+        else if (field.dataset.submit === 'edit') saveEdit(field.dataset.id);
+        return;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        if (field.dataset.submit === 'reply') { openReplies.delete(field.dataset.id); drafts.delete(`reply-${field.dataset.id}`); renderList(); }
+        else if (field.dataset.submit === 'edit') { editingId = null; drafts.delete(`edit-${field.dataset.id}`); renderList(); }
+        else field.blur();
+        return;
+      }
+    }
+    if (field.id === 'authorName' && e.key === 'Enter') { e.preventDefault(); $('commentText').focus(); }
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.defaultPrevented) return;
+    const typing = e.target instanceof Element && e.target.matches('input, textarea, select, [contenteditable="true"]');
+    if (e.key === 'Escape') {
+      if (anyModalOpen()) return closeModals();
+      if (typing) return e.target.blur();
+      if (editingId) { editingId = null; return renderList(); }
+      if (selectedId) { selectedId = null; renderList(); return renderTimeline(); }
+      return;
+    }
+    if (typing || e.ctrlKey || e.metaKey || e.altKey) return;
+    if (e.key === '?') { e.preventDefault(); return anyModalOpen() ? closeModals() : openModal('help-modal'); }
+    if (anyModalOpen()) return;
+
+    // e.code keeps shortcuts working on non-Latin keyboard layouts
+    const sel = selectedId && findAnnotation(selectedId);
+    switch (e.code) {
+      case 'Space': e.preventDefault(); togglePlayPause(); break;
+      case 'KeyK': togglePlayPause(); break;
+      case 'KeyJ': shuttle(-1); break;
+      case 'KeyL': shuttle(1); break;
+      case 'ArrowLeft': e.preventDefault(); seekRelative(e.shiftKey ? -10 : -5); break;
+      case 'ArrowRight': e.preventDefault(); seekRelative(e.shiftKey ? 10 : 5); break;
+      case 'Comma': stepFrame(-1); break;
+      case 'Period': stepFrame(1); break;
+      case 'KeyA': case 'KeyC': e.preventDefault(); $('commentText').focus(); break;
+      case 'KeyI': setRangePoint('in'); break;
+      case 'KeyO': setRangePoint('out'); break;
+      case 'KeyX': clearRange(); break;
+      case 'KeyS': toggleAttachFrame(); break;
+      case 'KeyN': navigateComments(1); break;
+      case 'KeyP': navigateComments(-1); break;
+      case 'Slash': e.preventDefault(); $('filterSearch').focus(); break;
+      case 'KeyR':
+        if (sel) {
+          e.preventDefault();
+          const rootId = sel.parent_id || sel.id;
+          openReplies.add(rootId);
+          renderList();
+          document.querySelector(`[data-draft="reply-${CSS.escape(rootId)}"]`)?.focus();
+        }
+        break;
+      case 'KeyE': if (sel && isOwn(sel)) { e.preventDefault(); startEdit(sel.id); } break;
+      case 'Digit1': if (sel) setStatus(sel.id, 1); break;
+      case 'Digit2': if (sel) setStatus(sel.id, 2); break;
+      case 'Digit3': if (sel) setStatus(sel.id, 3); break;
+      case 'Digit0': if (sel && sel.status) setStatus(sel.id, sel.status); break;
+      case 'Delete': case 'Backspace':
+        if (sel && (isOwn(sel) || perms.moderate)) { e.preventDefault(); deleteAnnotation(sel.id); }
+        break;
+    }
+  });
+}
+
+// Next/previous visible comment relative to the selection, or to the playhead
+function navigateComments(direction) {
+  const list = visibleRoots();
+  if (!list.length) return;
+  let idx = list.findIndex(a => a.id === selectedId);
+  if (idx === -1) {
+    const t = currentTime();
+    idx = direction > 0
+      ? list.findIndex(a => a.timecode > t + 0.05)
+      : list.map(a => a.timecode < t - 0.05).lastIndexOf(true);
+    if (idx === -1) idx = direction > 0 ? 0 : list.length - 1;
+  } else {
+    idx = (idx + direction + list.length) % list.length;
   }
-  return id && /^[A-Za-z0-9_-]{11}$/.test(id) ? id : null;
-}
-
-function formatTime(seconds) {
-  const m = Math.floor(seconds / 60), s = Math.floor(seconds % 60);
-  return `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
-}
-
-// Safe for both element content and quoted attribute values
-function escapeHtml(text) {
-  return String(text ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
+  selectAnnotation(list[idx].id, { seek: true, scroll: true });
+  renderTimeline();
 }

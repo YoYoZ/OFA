@@ -1,6 +1,6 @@
 // Removes the admin password set in the admin panel and logs out all admin sessions.
 // Afterwards ADMIN_PASSWORD (or the generated password in data/admin_password.txt) works again.
-//   docker compose exec ofa node scripts/reset-admin-password.js
+//   docker compose exec -u node ofa npm run reset-admin-password
 //   npm run reset-admin-password
 const path = require('path');
 const sqlite3 = require('sqlite3');

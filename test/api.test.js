@@ -367,4 +367,13 @@ test('admin: change password, other sessions logged out, survives restart', asyn
   assert.doesNotMatch(srv.output(), /generated admin password/, 'no stale password banner');
   assert.equal((await req('GET', '/api/admin/check', undefined, { Cookie: adminCookie })).data.authenticated, true);
   assert.equal((await req('POST', '/api/admin/login', { password: 'newpassword1' })).status, 200);
+
+  // Reset script brings the bootstrap password back and logs everyone out
+  const { execFileSync } = require('child_process');
+  execFileSync(process.execPath, [path.join(__dirname, '..', 'scripts', 'reset-admin-password.js')], {
+    cwd: srv.dataDir, env: { ...process.env, DATA_DIR: srv.dataDir, ADMIN_PASSWORD: '' }
+  });
+  assert.equal((await req('GET', '/api/admin/check', undefined, { Cookie: adminCookie })).data.authenticated, false);
+  assert.equal((await req('POST', '/api/admin/login', { password: 'newpassword1' })).status, 401);
+  assert.equal((await req('POST', '/api/admin/login', { password: adminPassword })).status, 200);
 });

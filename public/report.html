@@ -15,23 +15,22 @@
             line-height: 1.5;
         }
 
-        .page { max-width: 900px; margin: 0 auto; padding: 32px 24px 60px; }
+        .page { max-width: 960px; margin: 0 auto; padding: 32px 24px 60px; }
 
-        /* Top bar */
         .topbar {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 32px;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin-bottom: 24px;
             padding-bottom: 16px;
             border-bottom: 1px solid #333;
         }
-
-        .topbar-left a {
-            color: #64b5f6;
-            text-decoration: none;
-            font-size: 0.88rem;
-        }
+        .topbar a { color: #64b5f6; text-decoration: none; font-size: 0.88rem; }
+        .controls { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; font-size: 0.82rem; color: #9e9e9e; }
+        .controls label { display: inline-flex; gap: 5px; align-items: center; cursor: pointer; }
+        .controls select { background: #2a2a2a; color: #e0e0e0; border: 1px solid #3a3a3a; border-radius: 4px; padding: 3px 6px; }
 
         .print-btn {
             padding: 8px 20px;
@@ -43,216 +42,114 @@
             font-weight: 600;
             font-size: 0.88rem;
         }
-
         .print-btn:hover { background: #42a5f5; }
 
-        /* Header */
         .report-header {
             display: grid;
-            grid-template-columns: 180px 1fr;
+            grid-template-columns: 200px 1fr;
             gap: 24px;
-            margin-bottom: 28px;
+            margin-bottom: 24px;
             background: #2a2a2a;
             border-radius: 10px;
             padding: 20px;
         }
+        .cover { width: 200px; aspect-ratio: 16/9; object-fit: cover; border-radius: 6px; background: #333; }
+        .report-meta h1 { font-size: 1.4rem; color: #fff; margin-bottom: 6px; }
+        .report-meta .description { color: #9e9e9e; font-size: 0.88rem; margin-bottom: 12px; }
+        .report-meta .url a { color: #64b5f6; font-size: 0.82rem; word-break: break-all; text-decoration: none; }
+        .report-meta .export-date { margin-top: 8px; font-size: 0.78rem; color: #666; }
 
-        .thumbnail {
-            width: 180px;
-            aspect-ratio: 16/9;
-            object-fit: cover;
-            border-radius: 6px;
-            background: #333;
-        }
-
-        .thumbnail-placeholder {
-            width: 180px;
-            aspect-ratio: 16/9;
-            background: #2a2a2a;
-            border: 2px dashed #3a3a3a;
-            border-radius: 6px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: #555;
-            font-size: 2rem;
-        }
-
-        .report-meta h1 {
-            font-size: 1.4rem;
-            color: #fff;
-            margin-bottom: 6px;
-        }
-
-        .report-meta .description {
-            color: #9e9e9e;
-            font-size: 0.88rem;
-            margin-bottom: 12px;
-        }
-
-        .report-meta .url a {
-            color: #64b5f6;
-            font-size: 0.82rem;
-            word-break: break-all;
-            text-decoration: none;
-        }
-
-        .report-meta .export-date {
-            margin-top: 8px;
-            font-size: 0.78rem;
-            color: #555;
-        }
-
-        /* Stats */
-        .stats {
-            display: flex;
-            gap: 12px;
-            margin-bottom: 28px;
-        }
-
-        .stat-card {
-            flex: 1;
-            background: #2a2a2a;
-            border-radius: 8px;
-            padding: 14px 16px;
-            text-align: center;
-        }
-
-        .stat-number { font-size: 1.8rem; font-weight: 700; color: #64b5f6; }
+        .stats { display: flex; gap: 10px; margin-bottom: 24px; }
+        .stat-card { flex: 1; background: #2a2a2a; border-radius: 8px; padding: 12px 14px; text-align: center; }
+        .stat-number { font-size: 1.7rem; font-weight: 700; color: #64b5f6; }
         .stat-number.green  { color: #52b788; }
         .stat-number.red    { color: #e74c3c; }
         .stat-number.yellow { color: #ffd700; }
-        .stat-label  { font-size: 0.78rem; color: #9e9e9e; margin-top: 2px; }
+        .stat-number.blue   { color: #64b5f6; }
+        .stat-label  { font-size: 0.75rem; color: #9e9e9e; margin-top: 2px; }
 
-        /* Annotations table */
-        .section-title {
-            font-size: 1rem;
-            color: #fff;
-            margin-bottom: 12px;
-            font-weight: 600;
+        .section-title { font-size: 1rem; color: #fff; margin-bottom: 12px; font-weight: 600; }
+
+        .entry {
+            display: grid;
+            grid-template-columns: 70px var(--thumb-w, 240px) 1fr;
+            gap: 14px;
+            padding: 14px 0;
+            border-bottom: 1px solid #2e2e2e;
+            break-inside: avoid;
+            page-break-inside: avoid;
         }
+        .entry.no-thumbs { grid-template-columns: 70px 1fr; }
+        .tc { font-family: ui-monospace, Menlo, Consolas, monospace; color: #64b5f6; font-size: 0.82rem; white-space: nowrap; }
+        .tc small { display: block; color: #666; }
+        .body .author { color: #fff; font-weight: 600; font-size: 0.9rem; }
+        .body .text { color: #e0e0e0; font-size: 0.9rem; white-space: pre-wrap; word-break: break-word; margin: 2px 0 6px; }
+        .body .footer { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+        .replies { margin-top: 8px; border-left: 2px solid #333; padding-left: 10px; }
+        .reply { font-size: 0.82rem; color: #bbb; white-space: pre-wrap; word-break: break-word; }
+        .reply b { color: #9e9e9e; font-weight: 600; }
 
-        .annotations-table {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 0.85rem;
-        }
+        .sb-thumb { position: relative; display: block; overflow: hidden; border-radius: 4px; background: #111; }
+        .sb-thumb img { position: absolute; max-width: none; height: auto; display: block; }
+        .sb-thumb.shot img { position: static; width: 100%; height: 100%; object-fit: cover; }
+        .thumb-note { font-size: 0.68rem; color: #555; margin-top: 3px; }
 
-        .annotations-table thead tr {
-            background: #2a2a2a;
-            border-bottom: 2px solid #3a3a3a;
-        }
-
-        .annotations-table th {
-            padding: 10px 12px;
-            text-align: left;
-            color: #9e9e9e;
-            font-weight: 600;
-            font-size: 0.78rem;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-        }
-
-        .annotations-table td {
-            padding: 10px 12px;
-            border-bottom: 1px solid #2a2a2a;
-            vertical-align: top;
-        }
-
-        .annotations-table tbody tr:hover { background: #222; }
-
-        .tc {
-            font-family: monospace;
-            color: #64b5f6;
-            white-space: nowrap;
-            font-size: 0.82rem;
-        }
-
-        .author-cell { color: #fff; font-weight: 500; white-space: nowrap; }
-
-        .text-cell { color: #e0e0e0; }
-
-        .reply-row td { background: #1e1e1e; }
-        .reply-row .author-cell { color: #9e9e9e; font-weight: 400; padding-left: 24px; }
-        .reply-row .author-cell::before { content: '↳ '; color: #444; }
-
-        .status-badge {
-            display: inline-block;
-            padding: 2px 8px;
-            border-radius: 10px;
-            font-size: 0.72rem;
-            font-weight: 600;
-            white-space: nowrap;
-        }
-
+        .status-badge { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 0.72rem; font-weight: 600; white-space: nowrap; }
         .status-accepted { background: #1a3a2a; color: #52b788; }
         .status-rejected { background: #3a1a1a; color: #e74c3c; }
         .status-pending  { background: #2a2a1a; color: #ffd700; }
-
-        .tags-cell { display: flex; flex-wrap: wrap; gap: 4px; }
-        .tag-pill {
-            padding: 1px 7px;
-            border-radius: 8px;
-            font-size: 0.7rem;
-            font-weight: 600;
-            color: #1a1a1a;
-        }
+        .status-progress { background: #1a2a3a; color: #64b5f6; }
+        .status-by { font-size: 0.72rem; color: #777; }
+        .tag-pill { padding: 1px 7px; border-radius: 8px; font-size: 0.7rem; font-weight: 600; color: #1a1a1a; }
 
         .loading { text-align: center; padding: 60px; color: #555; font-size: 1.1rem; }
         .error   { text-align: center; padding: 60px; color: #e74c3c; }
+        .empty   { text-align: center; padding: 24px; color: #555; }
 
         /* ── Print styles ── */
+        @page { margin: 14mm 12mm; }
         @media print {
             body { background: #fff; color: #111; }
-
-            .topbar, .print-btn { display: none !important; }
-
+            .topbar { display: none !important; }
             .page { padding: 0; max-width: 100%; }
-
-            .report-header { background: #f5f5f5; border: 1px solid #ddd; color: #111; }
-            .report-meta h1 { color: #111; }
-            .report-meta .description { color: #555; }
-            .report-meta .url a { color: #1a6fa5; }
-            .report-meta .export-date { color: #999; }
-
+            .report-header { background: #f5f5f5; border: 1px solid #ddd; }
+            .report-meta h1, .section-title, .body .author { color: #111; }
+            .report-meta .description, .stat-label, .reply b { color: #555; }
+            .report-meta .url a, .tc, .stat-number { color: #1a6fa5; }
             .stat-card { background: #f5f5f5; border: 1px solid #ddd; }
-            .stat-number { color: #1a6fa5; }
             .stat-number.green  { color: #2d6a4f; }
             .stat-number.red    { color: #922b21; }
             .stat-number.yellow { color: #9a7d0a; }
-            .stat-label { color: #555; }
-
-            .section-title { color: #111; }
-
-            .annotations-table thead tr { background: #f0f0f0; }
-            .annotations-table th { color: #555; }
-            .annotations-table td { border-bottom: 1px solid #eee; color: #111; }
-            .annotations-table tbody tr:hover { background: transparent; }
-
-            .reply-row td { background: #fafafa; }
-            .reply-row .author-cell { color: #555; }
-
-            .tc { color: #1a6fa5; }
-            .author-cell { color: #111; }
-            .text-cell { color: #333; }
-
+            .entry { border-bottom-color: #ddd; }
+            .body .text { color: #222; }
+            .reply { color: #333; }
+            .replies { border-left-color: #ccc; }
             .status-accepted { background: #e8f5e9; color: #2d6a4f; }
             .status-rejected { background: #fde8e8; color: #922b21; }
             .status-pending  { background: #fffde7; color: #9a7d0a; }
-
+            .status-progress { background: #e3f2fd; color: #1a6fa5; }
             .tag-pill { border: 1px solid #ccc; color: #333; background: #f5f5f5 !important; }
-
-            .thumbnail-placeholder { border-color: #ddd; color: #ccc; }
+            .thumb-note { color: #999; }
         }
     </style>
 </head>
 <body>
     <div class="page">
-        <div class="topbar no-print">
-            <div class="topbar-left">
-                <a id="backLink" href="#">← Back to project</a>
+        <div class="topbar">
+            <a id="backLink" href="#">← Back to project</a>
+            <div class="controls">
+                <span id="statusToggles"></span>
+                <label><input type="checkbox" id="showReplies" checked> Replies</label>
+                <label>Frames
+                    <select id="thumbSize">
+                        <option value="0">none</option>
+                        <option value="160">small</option>
+                        <option value="240" selected>medium</option>
+                        <option value="320">large</option>
+                    </select>
+                </label>
+                <button class="print-btn" onclick="window.print()">🖨 Print / Save as PDF</button>
             </div>
-            <button class="print-btn" onclick="window.print()">🖨 Print / Save as PDF</button>
         </div>
 
         <div id="content">
@@ -260,157 +157,114 @@
         </div>
     </div>
 
+    <script src="/common.js"></script>
     <script>
-        const TAG_PALETTE = ['#64b5f6','#52b788','#ffd700','#e74c3c','#9b59b6','#e67e22','#1abc9c','#e91e63'];
-        const projectId = window.location.pathname.split('/')[2];
-
+        const projectId = decodeURIComponent(window.location.pathname.split('/')[2]);
         document.getElementById('backLink').href = `/project/${encodeURIComponent(projectId)}`;
 
-        function tagColor(name, config) {
-            const idx = config.indexOf(name);
-            return TAG_PALETTE[(idx >= 0 ? idx : 0) % TAG_PALETTE.length];
-        }
-
-        function escapeHtml(text) {
-            return String(text ?? '')
-                .replace(/&/g, '&amp;')
-                .replace(/</g, '&lt;')
-                .replace(/>/g, '&gt;')
-                .replace(/"/g, '&quot;')
-                .replace(/'/g, '&#39;');
-        }
-
-        function formatTime(s) {
-            const m = Math.floor(s / 60), sec = Math.floor(s % 60);
-            return `${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`;
-        }
-
-        function extractVideoId(input) {
-            let url;
-            try { url = new URL(String(input).trim()); } catch { return null; }
-            const host = url.hostname.toLowerCase().replace(/^(www\.|m\.|music\.)/, '');
-            let id = null;
-            if (host === 'youtu.be') id = url.pathname.split('/')[1];
-            else if (host === 'youtube.com' || host === 'youtube-nocookie.com') {
-                if (url.pathname === '/watch') id = url.searchParams.get('v');
-                else {
-                    const [, kind, value] = url.pathname.split('/');
-                    if (['embed', 'v', 'shorts', 'live'].includes(kind)) id = value;
-                }
-            }
-            return id && /^[A-Za-z0-9_-]{11}$/.test(id) ? id : null;
-        }
+        const prefs = Object.assign({ statuses: [0, 3, 1, 2], replies: true, thumb: 240 }, lsGet('ofa_report', {}));
+        let data = null;
+        let storyboard = null;
 
         function statusBadge(status) {
-            if (status === 1) return `<span class="status-badge status-accepted">✓ Accepted</span>`;
-            if (status === 2) return `<span class="status-badge status-rejected">✗ Rejected</span>`;
-            return `<span class="status-badge status-pending">◯ Pending</span>`;
+            const s = STATUS[status || 0];
+            return `<span class="status-badge status-${s.key}">${s.icon} ${s.label}</span>`;
         }
 
         function tagPills(tagsJson, config) {
-            if (!tagsJson) return '';
-            let tags; try { tags = JSON.parse(tagsJson); } catch { return ''; }
-            if (!Array.isArray(tags) || !tags.length) return '';
-            return `<div class="tags-cell">${tags.map(t =>
-                `<span class="tag-pill" style="background:${tagColor(t, config)}">${escapeHtml(t)}</span>`
-            ).join('')}</div>`;
+            return parseTags(tagsJson).map(t =>
+                `<span class="tag-pill" style="background:${tagColor(t, config)}">${escapeHtml(t)}</span>`).join('');
         }
 
-        async function render() {
+        function setupControls() {
+            document.getElementById('statusToggles').innerHTML = STATUS_ORDER.map(code =>
+                `<label><input type="checkbox" data-status="${code}" ${prefs.statuses.includes(code) ? 'checked' : ''}> ${STATUS[code].label}</label>`
+            ).join(' ');
+            document.getElementById('showReplies').checked = prefs.replies;
+            document.getElementById('thumbSize').value = String(prefs.thumb);
+            document.querySelector('.controls').addEventListener('change', () => {
+                prefs.statuses = [...document.querySelectorAll('[data-status]:checked')].map(i => Number(i.dataset.status));
+                prefs.replies = document.getElementById('showReplies').checked;
+                prefs.thumb = Number(document.getElementById('thumbSize').value);
+                lsSet('ofa_report', prefs);
+                render();
+            });
+        }
+
+        function render() {
             const content = document.getElementById('content');
-            try {
-                const res = await fetch(`/api/projects/${projectId}`);
-                if (!res.ok) throw new Error('Project not found');
-                const { project, annotations } = await res.json();
+            const { project, annotations } = data;
+            const tagsConfig = parseTags(project.tags_config);
+            const roots   = annotations.filter(a => !a.parent_id);
+            const replies = (id) => annotations.filter(a => a.parent_id === id);
+            const count = (code) => roots.filter(a => (a.status || 0) === code).length;
+            const shown = roots.filter(a => prefs.statuses.includes(a.status || 0));
 
-                document.title = `${project.title || 'Report'} — Open Frame Annotator`;
+            const videoId = extractVideoId(project.youtube_url);
+            const cover = videoId
+                ? `<img class="cover" src="https://img.youtube.com/vi/${videoId}/mqdefault.jpg" alt="" onerror="this.style.visibility='hidden'">`
+                : '<div class="cover"></div>';
 
-                const tagsConfig = project.tags_config ? JSON.parse(project.tags_config) : [];
-                const roots   = annotations.filter(a => !a.parent_id);
-                const replies = (id) => annotations.filter(a => a.parent_id === id);
-
-                const total    = roots.length;
-                const accepted = roots.filter(a => a.status === 1).length;
-                const rejected = roots.filter(a => a.status === 2).length;
-                const pending  = roots.filter(a => !a.status).length;
-
-                const videoId = extractVideoId(project.youtube_url);
-                const thumbnailHtml = videoId
-                    ? `<img class="thumbnail" src="https://img.youtube.com/vi/${videoId}/mqdefault.jpg" alt="Video thumbnail" onerror="this.style.display='none'">`
-                    : `<div class="thumbnail-placeholder">🎬</div>`;
-
-                const rowsHtml = roots.map(a => {
-                    const threadReplies = replies(a.id);
-                    const rootRow = `
-                        <tr>
-                            <td class="tc">${escapeHtml(formatTime(a.timecode))}</td>
-                            <td class="author-cell">${escapeHtml(a.author)}</td>
-                            <td class="text-cell">${escapeHtml(a.text)}</td>
-                            <td>${tagPills(a.tags, tagsConfig)}</td>
-                            <td>${statusBadge(a.status ?? 0)}</td>
-                        </tr>
-                    `;
-                    const replyRows = threadReplies.map(r => `
-                        <tr class="reply-row">
-                            <td class="tc"></td>
-                            <td class="author-cell">${escapeHtml(r.author)}</td>
-                            <td class="text-cell" colspan="2">${escapeHtml(r.text)}</td>
-                            <td></td>
-                        </tr>
-                    `).join('');
-                    return rootRow + replyRows;
-                }).join('');
-
-                content.innerHTML = `
-                    <div class="report-header">
-                        ${thumbnailHtml}
-                        <div class="report-meta">
-                            <h1>${escapeHtml(project.title || 'Untitled Project')}</h1>
-                            ${project.description ? `<p class="description">${escapeHtml(project.description)}</p>` : ''}
-                            <p class="url"><a href="${escapeHtml(project.youtube_url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(project.youtube_url)}</a></p>
-                            <p class="export-date">Exported ${new Date().toLocaleString('en-US', { dateStyle: 'long', timeStyle: 'short' })}</p>
+            const thumbW = prefs.thumb;
+            const entries = shown.map(a => {
+                const thumb = thumbW ? thumbnailHtml(a, storyboard, thumbW) : '';
+                const note = thumbW && thumb ? `<div class="thumb-note">${a.has_screenshot ? 'exact frame' : 'approx. frame'}</div>` : '';
+                const replyHtml = prefs.replies && replies(a.id).length
+                    ? `<div class="replies">${replies(a.id).map(r => `<div class="reply"><b>${escapeHtml(r.author)}:</b> ${escapeHtml(r.text)}</div>`).join('')}</div>`
+                    : '';
+                return `
+                    <div class="entry ${thumbW ? '' : 'no-thumbs'}" style="--thumb-w:${thumbW}px">
+                        <div class="tc">${escapeHtml(formatTime(a.timecode))}${a.timecode_end != null ? `<small>→ ${escapeHtml(formatTime(a.timecode_end))}</small>` : ''}</div>
+                        ${thumbW ? `<div>${thumb || ''}${note}</div>` : ''}
+                        <div class="body">
+                            <div class="author">${escapeHtml(a.author)}</div>
+                            <div class="text">${escapeHtml(a.text)}</div>
+                            <div class="footer">
+                                ${statusBadge(a.status)}
+                                ${a.status && a.status_by ? `<span class="status-by">by ${escapeHtml(a.status_by)}</span>` : ''}
+                                ${tagPills(a.tags, tagsConfig)}
+                            </div>
+                            ${replyHtml}
                         </div>
+                    </div>`;
+            }).join('');
+
+            content.innerHTML = `
+                <div class="report-header">
+                    ${cover}
+                    <div class="report-meta">
+                        <h1>${escapeHtml(project.title || 'Untitled Project')}</h1>
+                        ${project.description ? `<p class="description">${escapeHtml(project.description)}</p>` : ''}
+                        <p class="url"><a href="${escapeHtml(project.youtube_url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(project.youtube_url)}</a></p>
+                        <p class="export-date">Exported ${escapeHtml(new Date().toLocaleString(undefined, { dateStyle: 'long', timeStyle: 'short' }))}</p>
                     </div>
+                </div>
 
-                    <div class="stats">
-                        <div class="stat-card">
-                            <div class="stat-number">${total}</div>
-                            <div class="stat-label">Total Comments</div>
-                        </div>
-                        <div class="stat-card">
-                            <div class="stat-number green">${accepted}</div>
-                            <div class="stat-label">Accepted</div>
-                        </div>
-                        <div class="stat-card">
-                            <div class="stat-number red">${rejected}</div>
-                            <div class="stat-label">Rejected</div>
-                        </div>
-                        <div class="stat-card">
-                            <div class="stat-number yellow">${pending}</div>
-                            <div class="stat-label">Pending</div>
-                        </div>
-                    </div>
+                <div class="stats">
+                    <div class="stat-card"><div class="stat-number">${roots.length}</div><div class="stat-label">Total</div></div>
+                    <div class="stat-card"><div class="stat-number yellow">${count(0)}</div><div class="stat-label">Pending</div></div>
+                    <div class="stat-card"><div class="stat-number blue">${count(3)}</div><div class="stat-label">In progress</div></div>
+                    <div class="stat-card"><div class="stat-number green">${count(1)}</div><div class="stat-label">Accepted</div></div>
+                    <div class="stat-card"><div class="stat-number red">${count(2)}</div><div class="stat-label">Rejected</div></div>
+                </div>
 
-                    <p class="section-title">Comments</p>
-                    <table class="annotations-table">
-                        <thead>
-                            <tr>
-                                <th>Time</th>
-                                <th>Author</th>
-                                <th>Comment</th>
-                                <th>Tags</th>
-                                <th>Status</th>
-                            </tr>
-                        </thead>
-                        <tbody>${rowsHtml || '<tr><td colspan="5" style="text-align:center;color:#555;padding:24px;">No comments yet</td></tr>'}</tbody>
-                    </table>
-                `;
-            } catch (err) {
-                content.innerHTML = `<div class="error">Error loading report: ${escapeHtml(err.message)}</div>`;
-            }
+                <p class="section-title">Comments${shown.length !== roots.length ? ` (${shown.length} of ${roots.length})` : ''}</p>
+                ${entries || '<div class="empty">No comments to show</div>'}
+            `;
         }
 
-        render();
+        (async () => {
+            setupControls();
+            try {
+                data = await api('GET', `/api/projects/${encodeURIComponent(projectId)}`, undefined, { projectId });
+                document.title = `${data.project.title || 'Report'} — Open Frame Annotator`;
+                render();
+                storyboard = await Storyboard.load(projectId);
+                if (storyboard) render();
+            } catch (err) {
+                document.getElementById('content').innerHTML = `<div class="error">Error loading report: ${escapeHtml(err.message)}</div>`;
+            }
+        })();
     </script>
 </body>
 </html>

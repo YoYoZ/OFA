@@ -5,445 +5,434 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Admin Panel - Open Frame Annotator</title>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
+        * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             background: #1a1a1a;
             color: #e0e0e0;
             padding: 20px;
         }
+        .container { max-width: 1200px; margin: 0 auto; }
+        header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; gap: 12px; flex-wrap: wrap; }
+        header h1 { color: #fff; font-size: 1.6rem; }
+        header a { color: #64b5f6; text-decoration: none; font-size: 0.85rem; margin-right: 12px; }
 
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
+        button { font-family: inherit; }
+        .btn {
+            background: #2a2a2a; color: #e0e0e0; border: 1px solid #3a3a3a; border-radius: 6px;
+            padding: 7px 14px; cursor: pointer; font-size: 0.85rem;
         }
+        .btn:hover { border-color: #64b5f6; }
+        .btn.primary { background: #64b5f6; color: #1a1a1a; border-color: #64b5f6; font-weight: 600; }
+        .btn.primary:hover { background: #42a5f5; }
+        .btn.danger { color: #e74c3c; }
+        .btn.danger:hover { background: #e74c3c; color: #fff; border-color: #e74c3c; }
+        .btn:disabled { opacity: 0.4; cursor: default; }
+        .icon-btn {
+            background: none; border: 1px solid transparent; border-radius: 4px; color: #9e9e9e;
+            cursor: pointer; padding: 3px 6px; font-size: 0.9rem;
+        }
+        .icon-btn:hover { border-color: #3a3a3a; color: #fff; }
+        .icon-btn.on { color: #ffd700; }
 
-        header {
-            text-align: center;
-            margin-bottom: 40px;
+        input[type="text"], input[type="password"], input[type="number"], input[type="search"], select {
+            padding: 8px 10px; border: 2px solid #3a3a3a; background: #1a1a1a; color: #e0e0e0;
+            border-radius: 6px; font-size: 0.9rem;
         }
-
-        h1 {
-            color: #ffffff;
-            margin-bottom: 10px;
-        }
-
-        .logout-btn {
-            background: #e74c3c;
-            color: white;
-            border: none;
-            padding: 8px 16px;
-            border-radius: 4px;
-            cursor: pointer;
-            margin-top: 10px;
-        }
-
-        .logout-btn:hover {
-            background: #c0392b;
-        }
+        input:focus, select:focus { outline: none; border-color: #64b5f6; }
 
         .login-container {
-            max-width: 400px;
-            margin: 100px auto;
-            background: #2a2a2a;
-            padding: 40px;
-            border-radius: 12px;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+            max-width: 400px; margin: 100px auto; background: #2a2a2a; padding: 40px;
+            border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.3);
         }
+        .login-container h2 { margin-bottom: 20px; text-align: center; }
+        .login-container input { width: 100%; margin-bottom: 16px; font-size: 1rem; padding: 12px; }
+        .login-container .btn { width: 100%; padding: 12px; font-size: 1rem; }
+        .error { background: #c0392b; color: white; padding: 12px; border-radius: 6px; margin-bottom: 16px; text-align: center; }
 
-        .login-container h2 {
-            margin-bottom: 20px;
-            text-align: center;
-        }
+        .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 24px; }
+        .stat-card { background: #2a2a2a; padding: 18px; border-radius: 8px; text-align: center; }
+        .stat-number { font-size: 2rem; font-weight: bold; color: #64b5f6; }
+        .stat-label { color: #9e9e9e; margin-top: 4px; font-size: 0.85rem; }
 
-        .form-group {
-            margin-bottom: 20px;
-        }
+        .panel { background: #2a2a2a; border-radius: 12px; padding: 20px; margin-bottom: 24px; }
+        .panel h2 { font-size: 1.1rem; color: #fff; margin-bottom: 6px; }
+        .panel .hint { color: #777; font-size: 0.82rem; margin-bottom: 14px; }
+        .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
+        .row label { color: #9e9e9e; font-size: 0.85rem; }
 
-        .form-group label {
-            display: block;
-            margin-bottom: 8px;
-            color: #9e9e9e;
-        }
+        .toolbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
+        .toolbar input[type="search"] { flex: 1; min-width: 200px; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+        th { padding: 10px; text-align: left; font-weight: 600; color: #9e9e9e; font-size: 0.78rem; text-transform: uppercase; border-bottom: 1px solid #3a3a3a; }
+        td { padding: 10px; border-bottom: 1px solid #333; vertical-align: middle; }
+        tbody tr:hover { background: #303030; }
+        .project-link { color: #64b5f6; text-decoration: none; font-weight: 600; }
+        .project-link:hover { text-decoration: underline; }
+        .sub { color: #777; font-size: 0.75rem; }
+        .sub a { color: #777; }
+        .warn { color: #e67e22; }
+        .pill { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 0.72rem; background: #333; color: #ffd700; }
+        .empty-state { text-align: center; padding: 40px 20px; color: #9e9e9e; }
+        .actions { white-space: nowrap; text-align: right; }
 
-        .form-group input {
-            width: 100%;
-            padding: 12px;
-            border: 2px solid #3a3a3a;
-            background: #1a1a1a;
-            color: #e0e0e0;
-            border-radius: 6px;
-            font-size: 16px;
-        }
+        .cleanup-list { margin-top: 10px; font-size: 0.85rem; }
+        .cleanup-list li { margin-left: 18px; color: #bbb; }
+        .cleanup-list h4 { color: #e0e0e0; margin: 10px 0 4px; font-size: 0.88rem; }
 
-        .form-group input:focus {
-            outline: none;
-            border-color: #64b5f6;
-        }
+        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+        .stack { display: flex; flex-direction: column; gap: 10px; max-width: 360px; }
 
-        .login-btn {
-            width: 100%;
-            background: #64b5f6;
-            color: #1a1a1a;
-            border: none;
-            padding: 12px;
-            border-radius: 6px;
-            cursor: pointer;
-            font-weight: 500;
-            font-size: 16px;
-        }
+        .loading { text-align: center; padding: 40px; color: #9e9e9e; }
+        #toast-container { position: fixed; bottom: 24px; right: 24px; display: flex; flex-direction: column; gap: 10px; z-index: 1000; pointer-events: none; }
+        .toast { padding: 12px 18px; border-radius: 8px; font-size: 0.9rem; color: #fff; background: #333; transition: opacity 0.3s; max-width: 340px; }
+        .toast-success { background: #2d6a4f; } .toast-error { background: #922b21; } .toast-info { background: #1a5276; }
+        .toast-hide { opacity: 0; }
 
-        .login-btn:hover {
-            background: #42a5f5;
-        }
-
-        .login-btn:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-        }
-
-        .error {
-            background: #c0392b;
-            color: white;
-            padding: 12px;
-            border-radius: 6px;
-            margin-bottom: 20px;
-            text-align: center;
-        }
-
-        .projects-table {
-            background: #2a2a2a;
-            border-radius: 12px;
-            overflow: hidden;
-            box-shadow: 0 2px 20px rgba(0,0,0,0.3);
-        }
-
-        table {
-            width: 100%;
-            border-collapse: collapse;
-        }
-
-        thead {
-            background: #333333;
-        }
-
-        th {
-            padding: 15px;
-            text-align: left;
-            font-weight: 600;
-            color: #ffffff;
-        }
-
-        td {
-            padding: 15px;
-            border-top: 1px solid #3a3a3a;
-        }
-
-        tbody tr:hover {
-            background: #333333;
-        }
-
-        .project-link {
-            color: #64b5f6;
-            text-decoration: none;
-        }
-
-        .project-link:hover {
-            text-decoration: underline;
-        }
-
-        .youtube-link {
-            color: #ff6b6b;
-            text-decoration: none;
-        }
-
-        .youtube-link:hover {
-            text-decoration: underline;
-        }
-
-        .delete-btn {
-            background: #e74c3c;
-            color: white;
-            border: none;
-            padding: 8px 16px;
-            border-radius: 4px;
-            cursor: pointer;
-            font-weight: 500;
-        }
-
-        .delete-btn:hover {
-            background: #c0392b;
-        }
-
-        .empty-state {
-            text-align: center;
-            padding: 60px 20px;
-            color: #9e9e9e;
-        }
-
-        .stats {
-            display: flex;
-            gap: 20px;
-            margin-bottom: 30px;
-        }
-
-        .stat-card {
-            flex: 1;
-            background: #2a2a2a;
-            padding: 20px;
-            border-radius: 8px;
-            text-align: center;
-        }
-
-        .stat-number {
-            font-size: 2.5rem;
-            font-weight: bold;
-            color: #64b5f6;
-        }
-
-        .stat-label {
-            color: #9e9e9e;
-            margin-top: 5px;
-        }
-
-        .loading {
-            text-align: center;
-            padding: 40px;
-            color: #9e9e9e;
+        @media (max-width: 800px) {
+            .stats { grid-template-columns: 1fr 1fr; }
+            .grid-2 { grid-template-columns: 1fr; }
+            .hide-sm { display: none; }
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <!-- Login Form -->
         <div id="loginForm" class="login-container" style="display: none;">
             <h2>🔐 Admin Login</h2>
             <div id="loginError" class="error" style="display: none;"></div>
-            <form onsubmit="login(event)">
-                <div class="form-group">
-                    <label>Password</label>
-                    <input type="password" id="password" required autofocus>
-                </div>
-                <button type="submit" class="login-btn" id="loginBtn">Login</button>
+            <form id="loginFormEl">
+                <input type="password" id="password" placeholder="Password" required autofocus>
+                <button type="submit" class="btn primary" id="loginBtn">Login</button>
             </form>
         </div>
 
-        <!-- Admin Panel -->
         <div id="adminPanel" style="display: none;">
             <header>
                 <h1>🛠️ Admin Panel</h1>
-                <p>Manage Open Frame Annotator Projects</p>
-                <button class="logout-btn" onclick="logout()">Logout</button>
+                <div><a href="/">← Start page</a><button class="btn" id="logoutBtn">Logout</button></div>
             </header>
 
             <div class="stats">
-                <div class="stat-card">
-                    <div class="stat-number" id="totalProjects">0</div>
-                    <div class="stat-label">Total Projects</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-number" id="totalAnnotations">0</div>
-                    <div class="stat-label">Total Comments</div>
-                </div>
+                <div class="stat-card"><div class="stat-number" id="statProjects">0</div><div class="stat-label">Projects</div></div>
+                <div class="stat-card"><div class="stat-number" id="statComments">0</div><div class="stat-label">Comments</div></div>
+                <div class="stat-card"><div class="stat-number" id="statOpen">0</div><div class="stat-label">Open comments</div></div>
+                <div class="stat-card"><div class="stat-number" id="statStorage">0</div><div class="stat-label" id="statStorageLabel">Storage</div></div>
             </div>
 
-            <div class="projects-table">
+            <div class="panel">
+                <h2>Projects</h2>
+                <div class="toolbar">
+                    <input type="search" id="search" placeholder="Search by title or URL…">
+                    <select id="sort">
+                        <option value="activity">Last activity</option>
+                        <option value="created">Created</option>
+                        <option value="comments">Comments</option>
+                        <option value="title">Title</option>
+                        <option value="expires">Expires soonest</option>
+                    </select>
+                    <button class="btn danger" id="bulkDelete" disabled>Delete selected</button>
+                </div>
                 <table>
                     <thead>
                         <tr>
+                            <th style="width:28px"><input type="checkbox" id="selectAll"></th>
                             <th>Project</th>
-                            <th>YouTube URL</th>
                             <th>Comments</th>
-                            <th>Created</th>
-                            <th>Actions</th>
+                            <th class="hide-sm">Last activity</th>
+                            <th class="hide-sm">Expires</th>
+                            <th class="actions">Actions</th>
                         </tr>
                     </thead>
-                    <tbody id="projectsList">
-                    </tbody>
+                    <tbody id="projectsList"></tbody>
                 </table>
+            </div>
+
+            <div class="panel">
+                <h2>Auto-cleanup</h2>
+                <p class="hint">Delete projects that had no activity (new comments, replies, edits or status changes) for a while.
+                    Pinned projects are never deleted. Viewers see a warning banner before a project expires.</p>
+                <div class="row">
+                    <label for="retention">Delete after</label>
+                    <select id="retention">
+                        <option value="0">Never (off)</option>
+                        <option value="30">30 days</option>
+                        <option value="90">90 days</option>
+                        <option value="180">6 months</option>
+                        <option value="365">1 year</option>
+                        <option value="730">2 years</option>
+                        <option value="custom">Custom…</option>
+                    </select>
+                    <input type="number" id="retentionCustom" min="1" max="3650" placeholder="days" style="width:90px; display:none;">
+                    <label for="warnDays">warn</label>
+                    <input type="number" id="warnDays" min="0" max="365" style="width:80px"> <label>days before</label>
+                    <button class="btn primary" id="saveRetention">Save</button>
+                </div>
+                <div id="cleanupPreview" class="cleanup-list"></div>
+                <div class="row" style="margin-top:12px">
+                    <button class="btn danger" id="runCleanup" style="display:none">Run cleanup now</button>
+                </div>
+            </div>
+
+            <div class="grid-2">
+                <div class="panel">
+                    <h2>Admin password</h2>
+                    <p class="hint">After changing it here, ADMIN_PASSWORD from the environment is no longer used. All other admin sessions are logged out.
+                        Forgot it? Run <code>npm run reset-admin-password</code> (in Docker: <code>docker compose exec -u node ofa npm run reset-admin-password</code>).</p>
+                    <form class="stack" id="passwordForm">
+                        <input type="password" id="pwCurrent" placeholder="Current password" autocomplete="current-password" required>
+                        <input type="password" id="pwNew" placeholder="New password (min 8 characters)" autocomplete="new-password" minlength="8" required>
+                        <input type="password" id="pwRepeat" placeholder="Repeat new password" autocomplete="new-password" minlength="8" required>
+                        <button class="btn primary" type="submit">Change password</button>
+                    </form>
+                </div>
+                <div class="panel">
+                    <h2>Backup</h2>
+                    <p class="hint">Downloads a consistent copy of the SQLite database (projects, comments, settings).
+                        Attached frames live in <code>data/screenshots/</code> — back up the whole <code>data</code> folder to keep them.</p>
+                    <a class="btn primary" href="/api/admin/backup" style="text-decoration:none; display:inline-block">⬇ Download database</a>
+                </div>
             </div>
         </div>
 
-        <!-- Loading -->
-        <div id="loading" class="loading" style="display: none;">
-            Loading...
-        </div>
+        <div id="loading" class="loading">Loading...</div>
     </div>
+    <div id="toast-container"></div>
 
+    <script src="/common.js"></script>
     <script>
-        window.onload = async function() {
-            showLoading();
+        const $ = (id) => document.getElementById(id);
+        let state = { projects: [], settings: {}, selected: new Set() };
 
+        function show(which) {
+            ['loading', 'loginForm', 'adminPanel'].forEach(id => { $(id).style.display = id === which ? 'block' : 'none'; });
+        }
+
+        function formatBytes(n) {
+            if (n < 1024) return `${n} B`;
+            if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`;
+            if (n < 1024 ** 3) return `${(n / 1024 / 1024).toFixed(1)} MB`;
+            return `${(n / 1024 ** 3).toFixed(2)} GB`;
+        }
+
+        async function adminApi(method, url, body) {
+            try { return await api(method, url, body); }
+            catch (e) { if (e.status === 401) { show('loginForm'); } throw e; }
+        }
+
+        // ── Auth ──
+        $('loginFormEl').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const btn = $('loginBtn'), err = $('loginError');
+            btn.disabled = true; btn.textContent = 'Checking...'; err.style.display = 'none';
             try {
-                const response = await fetch('/api/admin/check');
-                const data = await response.json();
-
-                if (data.authenticated) {
-                    showAdminPanel();
-                } else {
-                    showLoginForm();
-                }
-            } catch (error) {
-                console.error('Auth check error:', error);
-                showLoginForm();
-            }
-        };
-
-        function showLoading() {
-            document.getElementById('loading').style.display = 'block';
-            document.getElementById('loginForm').style.display = 'none';
-            document.getElementById('adminPanel').style.display = 'none';
-        }
-
-        function showLoginForm() {
-            document.getElementById('loading').style.display = 'none';
-            document.getElementById('loginForm').style.display = 'block';
-            document.getElementById('adminPanel').style.display = 'none';
-        }
-
-        function showAdminPanel() {
-            document.getElementById('loading').style.display = 'none';
-            document.getElementById('loginForm').style.display = 'none';
-            document.getElementById('adminPanel').style.display = 'block';
-            loadProjects();
-        }
-
-        async function login(event) {
-            event.preventDefault();
-            const password = document.getElementById('password').value;
-            const loginBtn = document.getElementById('loginBtn');
-            const errorDiv = document.getElementById('loginError');
-
-            loginBtn.disabled = true;
-            loginBtn.textContent = 'Checking...';
-            errorDiv.style.display = 'none';
-
-            try {
-                const response = await fetch('/api/admin/login', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ password })
-                });
-
-                if (response.ok) {
-                    showAdminPanel();
-                } else if (response.status === 429) {
-                    errorDiv.textContent = 'Too many attempts. Try again in 15 minutes.';
-                    errorDiv.style.display = 'block';
-                } else {
-                    errorDiv.textContent = 'Invalid password!';
-                    errorDiv.style.display = 'block';
-                    document.getElementById('password').value = '';
-                    document.getElementById('password').focus();
-                }
-            } catch (error) {
-                console.error('Login error:', error);
-                errorDiv.textContent = 'Connection error';
-                errorDiv.style.display = 'block';
+                await api('POST', '/api/admin/login', { password: $('password').value });
+                $('password').value = '';
+                openPanel();
+            } catch (e) {
+                err.textContent = e.status === 429 ? 'Too many attempts. Try again in 15 minutes.' : e.status === 401 ? 'Invalid password' : e.message;
+                err.style.display = 'block';
+                $('password').focus();
             } finally {
-                loginBtn.disabled = false;
-                loginBtn.textContent = 'Login';
+                btn.disabled = false; btn.textContent = 'Login';
             }
+        });
+
+        $('logoutBtn').addEventListener('click', async () => {
+            try { await api('POST', '/api/admin/logout'); } catch {}
+            show('loginForm');
+        });
+
+        async function openPanel() {
+            show('adminPanel');
+            await Promise.all([loadProjects(), loadCleanup()]);
         }
 
-        async function logout() {
-            try {
-                await fetch('/api/admin/logout', { method: 'POST' });
-                showLoginForm();
-            } catch (error) {
-                console.error('Logout error:', error);
-                showLoginForm();
-            }
-        }
-
+        // ── Projects ──
         async function loadProjects() {
-            try {
-                const response = await fetch('/api/admin/projects');
+            const data = await adminApi('GET', '/api/admin/projects');
+            state.projects = data.projects;
+            state.settings = data.settings;
+            state.selected = new Set([...state.selected].filter(id => data.projects.some(p => p.id === id)));
+            $('statProjects').textContent = data.projects.length;
+            $('statComments').textContent = data.totalAnnotations;
+            $('statOpen').textContent = data.projects.reduce((s, p) => s + (p.open_count || 0), 0);
+            $('statStorage').textContent = formatBytes(data.storage.database + data.storage.screenshots);
+            $('statStorageLabel').textContent = `Storage (frames ${formatBytes(data.storage.screenshots)})`;
+            renderProjects();
+        }
 
-                if (response.status === 401) {
-                    showLoginForm();
-                    return;
-                }
+        function sortedProjects() {
+            const q = $('search').value.trim().toLowerCase();
+            let list = state.projects.filter(p => !q || `${p.title || ''} ${p.youtube_url} ${p.id}`.toLowerCase().includes(q));
+            const by = $('sort').value;
+            const date = (v) => (parseDbDate(v) || new Date(0)).getTime();
+            const cmp = {
+                activity: (a, b) => date(b.last_activity_at) - date(a.last_activity_at),
+                created: (a, b) => date(b.created_at) - date(a.created_at),
+                comments: (a, b) => b.annotations_count - a.annotations_count,
+                title: (a, b) => (a.title || '').localeCompare(b.title || ''),
+                expires: (a, b) => (a.expires_at ? Date.parse(a.expires_at) : Infinity) - (b.expires_at ? Date.parse(b.expires_at) : Infinity)
+            }[by];
+            return list.sort(cmp);
+        }
 
-                const data = await response.json();
-
-                document.getElementById('totalProjects').textContent = data.projects.length;
-                document.getElementById('totalAnnotations').textContent = data.totalAnnotations;
-
-                const tbody = document.getElementById('projectsList');
-
-                if (data.projects.length === 0) {
-                    tbody.innerHTML = '<tr><td colspan="5" class="empty-state">No projects yet</td></tr>';
-                    return;
-                }
-
-                tbody.innerHTML = data.projects.map(project => `
+        function renderProjects() {
+            const tbody = $('projectsList');
+            const list = sortedProjects();
+            if (!list.length) {
+                tbody.innerHTML = `<tr><td colspan="6" class="empty-state">${state.projects.length ? 'Nothing matches the search' : 'No projects yet'}</td></tr>`;
+            } else {
+                const warnMs = (state.settings.retention_warn_days || 0) * 86400000;
+                tbody.innerHTML = list.map(p => {
+                    const id = escapeHtml(p.id);
+                    const expires = p.expires_at ? new Date(p.expires_at) : null;
+                    const soon = expires && expires.getTime() - Date.now() < warnMs;
+                    return `
                     <tr>
+                        <td><input type="checkbox" data-select="${id}" ${state.selected.has(p.id) ? 'checked' : ''}></td>
                         <td>
-                            <a href="/project/${encodeURIComponent(project.id)}" class="project-link" target="_blank" rel="noopener">
-                                ${project.title ? escapeHtml(project.title) : `<code>${escapeHtml(project.id.substring(0, 8))}...</code>`}
-                            </a>
+                            <a class="project-link" href="/project/${encodeURIComponent(p.id)}" target="_blank" rel="noopener">${escapeHtml(p.title || p.id.slice(0, 8) + '…')}</a>
+                            <div class="sub"><a href="${escapeHtml(p.youtube_url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(p.youtube_url)}</a></div>
                         </td>
-                        <td>
-                            <a href="${escapeHtml(project.youtube_url)}" class="youtube-link" target="_blank" rel="noopener noreferrer">
-                                ${escapeHtml(project.youtube_url)}
-                            </a>
+                        <td>${p.annotations_count}${p.open_count ? ` <span class="sub">(${p.open_count} open)</span>` : ''}</td>
+                        <td class="hide-sm"><span title="${escapeHtml(String(p.last_activity_at || ''))}">${escapeHtml(timeAgo(p.last_activity_at))}</span>
+                            <div class="sub">created ${escapeHtml(formatDate(p.created_at))}</div></td>
+                        <td class="hide-sm">${p.pinned ? '<span class="pill">📌 pinned</span>' : expires ? `<span class="${soon ? 'warn' : ''}">${escapeHtml(formatDate(expires))}</span>` : '<span class="sub">—</span>'}</td>
+                        <td class="actions">
+                            <button class="icon-btn ${p.pinned ? 'on' : ''}" data-pin="${id}" title="${p.pinned ? 'Unpin' : 'Pin — never auto-delete'}">📌</button>
+                            <button class="icon-btn" data-copy-link="${escapeHtml(p.share_url)}" title="Copy reviewer link">🔗</button>
+                            ${p.editor_url ? `<button class="icon-btn" data-copy-link="${escapeHtml(p.editor_url)}" title="Copy editor link">🔑</button>` : ''}
+                            <button class="icon-btn" data-rotate="${id}" title="${p.editor_url ? 'Revoke the editor link and create a new one' : 'Create an editor link (locks status changes to editors)'}">♻️</button>
+                            <button class="icon-btn" data-delete="${id}" title="Delete project">🗑️</button>
                         </td>
-                        <td>${project.annotations_count}</td>
-                        <td>${escapeHtml(new Date(project.created_at.replace(' ', 'T') + 'Z').toLocaleString('en-US'))}</td>
-                        <td>
-                            <button class="delete-btn" data-id="${escapeHtml(project.id)}" onclick="deleteProject(this.dataset.id)">
-                                🗑️ Delete
-                            </button>
-                        </td>
-                    </tr>
-                `).join('');
-            } catch (error) {
-                console.error('Error loading projects:', error);
-                alert('Error loading data');
+                    </tr>`;
+                }).join('');
             }
+            $('selectAll').checked = list.length > 0 && list.every(p => state.selected.has(p.id));
+            $('bulkDelete').disabled = !state.selected.size;
+            $('bulkDelete').textContent = state.selected.size ? `Delete selected (${state.selected.size})` : 'Delete selected';
         }
 
-        async function deleteProject(projectId) {
-            if (!confirm('Are you sure? This will delete the project and all its comments!')) {
-                return;
-            }
+        $('search').addEventListener('input', renderProjects);
+        $('sort').addEventListener('change', renderProjects);
+        $('selectAll').addEventListener('change', (e) => {
+            sortedProjects().forEach(p => e.target.checked ? state.selected.add(p.id) : state.selected.delete(p.id));
+            renderProjects();
+        });
 
+        $('projectsList').addEventListener('change', (e) => {
+            const box = e.target.closest('[data-select]');
+            if (!box) return;
+            box.checked ? state.selected.add(box.dataset.select) : state.selected.delete(box.dataset.select);
+            renderProjects();
+        });
+
+        $('projectsList').addEventListener('click', async (e) => {
+            const btn = e.target.closest('button');
+            if (!btn) return;
             try {
-                const response = await fetch(`/api/admin/projects/${encodeURIComponent(projectId)}`, {
-                    method: 'DELETE'
-                });
-
-                if (response.status === 401) {
-                    alert('Session expired');
-                    showLoginForm();
-                    return;
+                if (btn.dataset.copyLink) {
+                    if (await copyText(btn.dataset.copyLink)) showToast('Link copied', 'success');
+                } else if (btn.dataset.pin) {
+                    const p = state.projects.find(x => x.id === btn.dataset.pin);
+                    await adminApi('PATCH', `/api/admin/projects/${encodeURIComponent(p.id)}`, { pinned: !p.pinned });
+                    await Promise.all([loadProjects(), loadCleanup()]);
+                } else if (btn.dataset.rotate) {
+                    const p = state.projects.find(x => x.id === btn.dataset.rotate);
+                    const msg = p.editor_url
+                        ? 'Create a new editor link? The current one stops working immediately.'
+                        : 'Create an editor link? After that only editors can accept/reject comments in this project.';
+                    if (!confirm(msg)) return;
+                    const updated = await adminApi('PATCH', `/api/admin/projects/${encodeURIComponent(p.id)}`, { rotate_editor_token: true });
+                    await copyText(updated.editor_url);
+                    showToast('New editor link copied to clipboard', 'success');
+                    await loadProjects();
+                } else if (btn.dataset.delete) {
+                    const p = state.projects.find(x => x.id === btn.dataset.delete);
+                    if (!confirm(`Delete “${p.title || p.id}” and all ${p.annotations_count} comments? This cannot be undone.`)) return;
+                    await adminApi('DELETE', `/api/admin/projects/${encodeURIComponent(p.id)}`);
+                    state.selected.delete(p.id);
+                    showToast('Project deleted', 'info');
+                    await Promise.all([loadProjects(), loadCleanup()]);
                 }
+            } catch (err) { showToast(err.message, 'error'); }
+        });
 
-                if (response.ok) {
-                    loadProjects();
-                } else {
-                    alert('Error deleting project');
-                }
-            } catch (error) {
-                console.error('Delete error:', error);
-                alert('Error deleting project');
+        $('bulkDelete').addEventListener('click', async () => {
+            const ids = [...state.selected];
+            if (!ids.length || !confirm(`Delete ${ids.length} project(s) with all their comments? This cannot be undone.`)) return;
+            try {
+                const res = await adminApi('POST', '/api/admin/projects/delete', { ids });
+                state.selected.clear();
+                showToast(`Deleted ${res.deleted} project(s)`, 'info');
+                await Promise.all([loadProjects(), loadCleanup()]);
+            } catch (err) { showToast(err.message, 'error'); }
+        });
+
+        // ── Cleanup ──
+        async function loadCleanup() {
+            const data = await adminApi('GET', '/api/admin/cleanup/preview');
+            const days = data.settings.retention_days;
+            const preset = ['0', '30', '90', '180', '365', '730'].includes(String(days));
+            $('retention').value = preset ? String(days) : 'custom';
+            $('retentionCustom').style.display = preset ? 'none' : '';
+            if (!preset) $('retentionCustom').value = days;
+            $('warnDays').value = data.settings.retention_warn_days;
+
+            const item = (p) => `<li>${escapeHtml(p.title || p.id.slice(0, 8))} — last activity ${escapeHtml(formatDate(p.last_activity_at))}, ${p.annotations_count} comments${p.expires_at ? `, expires ${escapeHtml(formatDate(p.expires_at))}` : ''}</li>`;
+            let html = '';
+            if (!days) html = '<p class="hint">Auto-cleanup is off.</p>';
+            else {
+                html += `<h4>${data.due.length ? `⚠ ${data.due.length} project(s) will be deleted on the next run (every 6 hours):` : 'Nothing is due for deletion.'}</h4>`;
+                if (data.due.length) html += `<ul>${data.due.map(item).join('')}</ul>`;
+                if (data.soon.length) html += `<h4>${data.soon.length} project(s) inside the warning window:</h4><ul>${data.soon.map(item).join('')}</ul>`;
             }
+            $('cleanupPreview').innerHTML = html;
+            $('runCleanup').style.display = days && data.due.length ? '' : 'none';
         }
 
-        function escapeHtml(text) {
-            return String(text ?? '')
-                .replace(/&/g, '&amp;')
-                .replace(/</g, '&lt;')
-                .replace(/>/g, '&gt;')
-                .replace(/"/g, '&quot;')
-                .replace(/'/g, '&#39;');
-        }
+        $('retention').addEventListener('change', () => {
+            $('retentionCustom').style.display = $('retention').value === 'custom' ? '' : 'none';
+        });
+
+        $('saveRetention').addEventListener('click', async () => {
+            const days = $('retention').value === 'custom' ? parseInt($('retentionCustom').value, 10) : parseInt($('retention').value, 10);
+            const warn = parseInt($('warnDays').value, 10);
+            if (!Number.isInteger(days) || days < 0) { showToast('Enter a number of days', 'error'); return; }
+            try {
+                await adminApi('PUT', '/api/admin/settings', { retention_days: days, retention_warn_days: Number.isInteger(warn) ? warn : 30 });
+                showToast(days ? `Projects inactive for ${days} days will be deleted` : 'Auto-cleanup disabled', 'success');
+                await Promise.all([loadProjects(), loadCleanup()]);
+            } catch (err) { showToast(err.message, 'error'); }
+        });
+
+        $('runCleanup').addEventListener('click', async () => {
+            if (!confirm('Delete all projects that are due now?')) return;
+            try {
+                const res = await adminApi('POST', '/api/admin/cleanup/run');
+                showToast(`Deleted ${res.deleted} project(s)`, 'info');
+                await Promise.all([loadProjects(), loadCleanup()]);
+            } catch (err) { showToast(err.message, 'error'); }
+        });
+
+        // ── Password ──
+        $('passwordForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            if ($('pwNew').value !== $('pwRepeat').value) { showToast('New passwords do not match', 'error'); return; }
+            try {
+                await adminApi('POST', '/api/admin/password', { current: $('pwCurrent').value, next: $('pwNew').value });
+                e.target.reset();
+                showToast('Password changed', 'success');
+            } catch (err) { showToast(err.message, 'error'); }
+        });
+
+        (async () => {
+            try {
+                const data = await api('GET', '/api/admin/check');
+                if (data.authenticated) await openPanel(); else show('loginForm');
+            } catch { show('loginForm'); }
+        })();
     </script>
 </body>
 </html>

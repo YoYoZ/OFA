@@ -4,7 +4,7 @@
 [![Node.js](https://img.shields.io/badge/Node.js-v20.17+-green)](https://nodejs.org/)
 [![Docker image](https://github.com/YoYoZ/OFA/actions/workflows/docker.yml/badge.svg)](https://github.com/YoYoZ/OFA/actions/workflows/docker.yml)
 
-**Open Frame Annotator** is an open-source tool for collaborative YouTube video annotation. Create a project from any YouTube video, invite your team to leave time-stamped comments, reply in threads, tag issues by category, and export everything to Premiere Pro markers or a printable PDF report.
+**Open Frame Annotator** is an open-source tool for collaborative YouTube video review. Create a project from any YouTube video, share a link with your team, collect time-stamped comments and ranges, work through them as the editor, and take the result straight into DaVinci Resolve or Premiere Pro — or print a PDF report with frames.
 
 Perfect for **video reviews**, **editorial feedback**, **client approvals**, and **team QA workflows**.
 
@@ -16,22 +16,22 @@ If it saves you time, [☕ buy me a coffee](https://base.monobank.ua/4QTZuQ2Q8Uf
 
 | Feature | Details |
 |---|---|
-| 🎥 **YouTube Integration** | Paste any YouTube URL — public or unlisted — to embed the video |
-| ⏱️ **Time-Stamped Comments** | Annotate at any timestamp; author name is free-text (no accounts needed) |
-| 💬 **Threaded Replies** | Reply directly to any comment; threads collapse cleanly in the sidebar |
-| 🏷️ **Custom Tags** | Define up to 8 colour-coded tags per project (e.g. *color*, *audio*, *pacing*) |
-| ✅ **Review Status** | Mark each comment Accepted ✓, Rejected ✗, or leave it Pending ◯ |
-| 📊 **Progress Indicator** | Live "X / Y reviewed" counter updates as you work through comments |
-| 🎯 **Timeline Clustering** | Nearby markers merge into clusters; hover to expand individual items |
-| ⚡ **Real-Time Collaboration** | All connected viewers see new comments and status changes instantly via WebSocket |
-| ⌨️ **Keyboard Shortcuts** | Space, arrow keys, and `A` so you never have to leave the keyboard |
-| 📄 **PDF Report** | One-click printable report with thumbnail, stats, and full comment table |
-| 🎞️ **Premiere Pro CSV Export** | Download markers as CSV with frame-accurate timecodes; built-in import tutorial |
-| 🔒 **Edit Tokens** | Delete-your-own-comment system without user accounts |
-| 🛠️ **Admin Panel** | Password-protected panel for viewing stats and deleting projects |
-| 🔊 **Audio Feedback** | Subtle sounds on accept and delete actions |
-| 🌙 **Dark Theme** | Responsive dark UI, print-optimised report |
-| 💾 **SQLite** | Zero external database — everything lives in a single file |
+| 🎥 **YouTube Integration** | Any public or unlisted video — watch, youtu.be, shorts, live and mobile links |
+| ⏱️ **Comments & Ranges** | Comment on a moment or on a range (`I` / `O`); the video pauses as soon as you start typing |
+| 💬 **Threaded Replies** | Reply to any comment; edit or delete your own comments and replies |
+| 🏷️ **Custom Tags** | Up to 8 colour-coded tags per project, editable later |
+| 👥 **Reviewer & Editor Links** | Reviewers comment; the editor link also accepts/rejects, moderates and changes settings |
+| ✅ **Review Workflow** | Pending → In progress → Accepted / Rejected, with who changed it and when |
+| 🔎 **Filters & Bulk Actions** | Filter by status, tag, author or text; change status or delete many comments at once |
+| 🖼️ **Frames** | Automatic preview frames from YouTube's storyboard, or attach the exact frame (tab capture) |
+| 🎞️ **NLE Export** | DaVinci Resolve markers (EDL, coloured), Premiere Pro markers (FCP XML), on-screen subtitles (SRT), CSV |
+| 📄 **PDF Report** | Printable report with frames, stats and replies; filter what goes in |
+| ⚡ **Real-Time Collaboration** | Everyone sees new comments, edits and status changes instantly; reconnects catch up automatically |
+| ⌨️ **Keyboard-First** | Enter to send, J/K/L shuttle, frame stepping, N/P to walk through comments, 1/2/3 to set status |
+| 💾 **Browser Backup** | Every project you open is kept in your browser; export/import it, restore deleted projects |
+| 🛠️ **Admin Panel** | Password change, project search, pinning, editor-link revocation, auto-cleanup, DB backup |
+| 🧹 **Auto-Cleanup** | Optionally delete projects after N days without activity, with a warning banner before |
+| 🗄️ **SQLite** | No external database — one folder holds everything |
 
 ---
 
@@ -89,71 +89,92 @@ Access at: **http://localhost:3000**
 
 ## 📖 Usage
 
-### 1. Create a Project
+### 1. Create a project
 
 1. Open `http://localhost:3000`
-2. Fill in:
-   - **Project Title** *(required)* — shown in the header and PDF report
-   - **YouTube URL** *(required)* — public or unlisted link
-   - **Description** *(optional)* — a brief note for reviewers
-   - **Custom Tags** *(optional)* — comma-separated list, max 8 (e.g. `color, audio, pacing, continuity`)
-3. Click **Create Project**
-4. Copy the unique share link and send it to your team
+2. Fill in the title, the YouTube URL and optionally a description and tags (comma-separated, max 8)
+3. Click **Create Project**. You get two links:
+   - **Reviewer link** — send it to everyone who should comment
+   - **Editor link** — keep it for yourself: it can accept/reject comments, delete any comment and change project settings
 
-### 2. Annotate the Video
+The editor link carries a key after `#key=`. When you open it, the key is stored in your browser and removed from the address bar, so copying the URL afterwards gives the reviewer link. You can always get both links again from **🔗 Share**.
 
-1. Open the project link
-2. Play the video and pause at the moment you want to comment on
-3. Enter your name and comment text
-4. Optionally select one or more tags
-5. Click **"Add at [timestamp]"**
+Projects created before roles existed stay open: anyone can change statuses, nobody can moderate. The admin can lock such a project by creating an editor link for it.
 
-Timeline marker colours:
-- 🔴 **Red** — pending comment
-- 🟢 **Green** — accepted comment
-- 🟡 **Yellow** — cluster with mixed statuses
+### 2. Comment
 
-Click any marker to jump to that timestamp. Hover over a cluster to see individual entries.
+1. Enter your name once (it is remembered)
+2. Start typing — the video pauses and the comment is pinned to that moment
+3. Press **Enter** to send (**Shift+Enter** for a new line)
 
-### 3. Reply to Comments
+For a **range**, press `I` at the start and `O` at the end, then write the comment. Ranges show as bars on the timeline and become duration markers / subtitle lengths in exports.
 
-Click **Reply** under any comment to open an inline reply form. Replies are threaded under the parent comment and carry the same timecode.
+**Frames.** Every comment automatically gets an approximate preview frame from YouTube's storyboard (the seek-bar thumbnails, 320×180, every ~2 s). For the exact frame, click **📷 Attach frame** (or press `S`) and choose **This tab** in the browser dialog: new comments then carry a screenshot of the player. Works best in Chrome/Edge (Region Capture crops exactly to the player); other browsers crop from the whole tab. Your own existing comments get a 📷 button to attach a frame later.
 
-### 4. Review Comments
+### 3. Review (editor)
 
-- **Accept** — click ✓ to mark a comment as accepted (plays a bell tone)
-- **Reject** — click ✗ to mark as rejected
-- **Delete** — click 🗑️ to delete (you can only delete comments you created in the current browser session; see [Edit Tokens](#-edit-tokens))
+- **◔ In work / ✓ Accept / ✗ Reject** on every comment; clicking the active status resets it to pending. The status line shows who changed it and when.
+- Filter by status, tag, author or text; sort by timecode or newest.
+- Tick comments and use the bulk bar to change the status of many at once or delete them.
+- **⚙ Settings** changes the title, description and tags.
 
-The progress bar shows **"X / Y reviewed"** (accepted + rejected out of total root comments).
+### 4. Export to your NLE
 
-### 5. Export
+Click **⬇ Export** and choose:
 
-**PDF Report**  
-Click **📄 Report** in the top bar. The report page shows the video thumbnail, project metadata, stats summary, and a full comment table including replies. Use your browser's **Print → Save as PDF** to export.
+| Format | Where | What you get |
+|---|---|---|
+| **EDL** | DaVinci Resolve — Media Pool → right-click the timeline → *Timelines → Import → Timeline Markers from EDL…* | Markers coloured by status (or first tag), ranges as duration markers |
+| **FCP XML** | Premiere Pro — *File → Import* | A sequence carrying all comments as markers; drop the reviewed cut into it |
+| **SRT** | Premiere Pro and Resolve | A subtitle/caption track: the comments appear right over the picture |
+| **CSV** | Excel / Google Sheets | Timecodes, authors, comments, tags, status and replies |
 
-**Premiere Pro CSV**  
-Click **⬇ Export Markers**, choose the frame rate matching your Premiere sequence, and click **Download CSV**. Follow the built-in step-by-step tutorial to import into Adobe Premiere Pro or DaVinci Resolve.
+Set the **frame rate** and **start timecode** of your timeline (Resolve timelines start at `01:00:00:00` by default, Premiere at `00:00:00:00`). 29.97 and 59.94 use SMPTE drop-frame timecode. You can restrict the export to certain statuses — e.g. only what is still to do.
 
-### 6. Keyboard Shortcuts
+### 5. PDF report
+
+**📄 Report** opens a printable page with the video cover, stats and every comment with its frame, tags, status and replies. Choose which statuses to include, whether to show replies and the frame size, then **Print → Save as PDF**. Frames are marked as *exact* (attached screenshot) or *approx.* (storyboard).
+
+### 6. Keyboard shortcuts
+
+Press `?` on the project page for the full list.
 
 | Key | Action |
 |---|---|
-| `Space` | Play / Pause |
-| `←` / `→` | Seek ±5 seconds |
-| `Shift+←` / `Shift+→` | Seek ±10 seconds |
-| `A` | Focus the comment text field |
-| `Esc` | Close export modal / close open reply forms |
+| `Space` / `K` | Play / pause |
+| `J` / `L` | Slower or back 5 s / play, faster (1× → 1.5× → 2×) |
+| `←` / `→` | Seek ±5 s (`Shift` ±10 s) |
+| `,` / `.` | Step one frame back / forward |
+| `A` / `C` | Focus the comment field |
+| `Enter` / `Shift+Enter` | Send / new line (comment, reply and edit fields) |
+| `I` / `O` / `X` | Range in / out / clear |
+| `S` | Toggle “Attach frame” |
+| `N` / `P` | Next / previous comment (seeks the video) |
+| `R` / `E` | Reply to / edit the selected comment |
+| `1` `2` `3` `0` | Accept / reject / in progress / pending (editor) |
+| `Del` | Delete the selected comment |
+| `/` | Search comments |
+| `Esc` | Close dialogs, cancel editing, clear selection |
 
-Shortcuts are disabled when focus is inside any text input.
+Shortcuts use physical key positions, so they also work with Cyrillic and other keyboard layouts.
 
-### 7. Admin Panel
+### 7. Your browser backup
 
-1. Go to `http://localhost:3000/admin`
-2. Enter the password from your `.env` file (or the generated one from the logs / `data/admin_password.txt`)
-3. View total project and comment counts, list all projects, and delete any project (cascades to all comments; open viewers are notified)
+Every project you open is stored in your browser (IndexedDB): the project, all its comments, your editor key and the tokens of your own comments. The start page lists them under **My projects**.
 
-Session lasts **24 hours** and survives server restarts.
+- **Export backup / Import backup** moves everything to another browser or computer as a JSON file.
+- If a project was deleted on the server (e.g. by auto-cleanup), its page and the list offer **Restore** — the project is recreated at the same address with all comments, and you become its editor.
+
+### 8. Admin panel
+
+Open `/admin` and log in with the password from `.env` (or the generated one from the logs / `data/admin_password.txt`).
+
+- **Projects** — search, sort, see open comments and last activity, pin projects, copy reviewer/editor links, revoke an editor link (♻️), delete one or many
+- **Auto-cleanup** — delete projects after 30 days … 2 years (or a custom number) without activity; a preview shows what would be deleted and what is inside the warning window; viewers see a banner before expiry; pinned projects are never deleted. Runs every 6 hours.
+- **Admin password** — change it in the panel (stored as a scrypt hash; other sessions are logged out). Forgot it? `npm run reset-admin-password` (Docker: `docker compose exec -u node ofa npm run reset-admin-password`) brings back `ADMIN_PASSWORD` / the generated password.
+- **Backup** — download a consistent copy of the database
+
+The admin is treated as the editor of every project. Sessions last 24 hours and survive restarts.
 
 ---
 
@@ -162,205 +183,111 @@ Session lasts **24 hours** and survives server restarts.
 ```
 OFA/
 ├── public/
-│   ├── index.html       # Homepage — create new project
-│   ├── project.html     # Annotation interface
-│   ├── report.html      # Printable PDF report page
+│   ├── index.html       # Start page — create project, my projects, backup
+│   ├── project.html     # Review interface
+│   ├── project.js       # Review logic (player, comments, hotkeys, frames, export dialog)
+│   ├── common.js        # Shared helpers: API, storyboard frames, browser backup
+│   ├── report.html      # Printable PDF report
 │   ├── admin.html       # Admin panel
-│   ├── project.js       # All client-side logic
-│   └── style.css        # Styles
+│   └── style.css
+├── lib/
+│   ├── exporters.js     # CSV / SRT / EDL / FCP XML builders
+│   ├── timecode.js      # SMPTE timecode maths (incl. drop-frame)
+│   └── youtube.js       # Link parsing and storyboard lookup
+├── scripts/
+│   └── reset-admin-password.js
+├── test/                # node:test suite (npm test)
 ├── server.js            # Express + Socket.io server and API routes
 ├── data/                # Runtime state (gitignored, auto-created)
-│   ├── annotations.db   # SQLite database: projects, comments, admin sessions
+│   ├── annotations.db   # SQLite: projects, comments, sessions, settings
+│   ├── screenshots/     # Attached frames
 │   ├── .session_secret  # generated if SESSION_SECRET is not set
 │   └── admin_password.txt # generated if ADMIN_PASSWORD is not set
-├── .env.example         # Configuration template (copy to .env)
-├── Dockerfile
-├── docker-entrypoint.sh
-├── docker-compose.yml
-├── FULL-RESET.sh        # Wipes data and rebuilds the container from scratch
-├── package.json
-├── package-lock.json
-└── README.md
+├── .env.example
+├── Dockerfile, docker-entrypoint.sh, docker-compose.yml
+└── FULL-RESET.sh        # Wipes data and rebuilds the container from scratch
 ```
 
 ---
 
 ## 🔌 API Reference
 
-All routes use JSON unless otherwise noted.
+JSON everywhere unless noted. Editor-only calls need the header `X-Editor-Key: <editor token>` (or an admin session). Your own comments are identified by the `edit_token` returned on creation (body field `edit_token` or header `X-Edit-Token`).
 
 ### Projects
 
-**Create project**
-```http
-POST /api/projects
-Content-Type: application/json
+| Method & path | Who | Notes |
+|---|---|---|
+| `POST /api/projects` | anyone | `{ youtube_url, title?, description?, tags_config? }` → `201 { project_id, editor_token, share_url, editor_url }` |
+| `GET /api/projects/:id` | anyone | `{ project, annotations, permissions: { review, moderate, admin }, retention }`; `project.editor_token` only for editors |
+| `PATCH /api/projects/:id` | editor | `{ title?, description?, tags_config? }` |
+| `GET /api/projects/:id/storyboard` | anyone | `{ duration, levels: [...] }` — YouTube storyboard sprite sheets for preview frames |
+| `GET /api/projects/:id/export/:format` | anyone | `format`: `edl` · `xml` · `srt` · `csv`; query `fps`, `start` (`01:00:00:00`), `color` (`status`/`tag`), `statuses` (`0,3`) |
+| `POST /api/projects/restore` | anyone | `{ project, annotations }` from a browser backup; `409` if the project exists |
 
-{
-  "youtube_url": "https://youtu.be/dQw4w9WgXcQ",
-  "title": "Brand Ad — Cut 3",
-  "description": "Final round of reviews before delivery",
-  "tags_config": "color, audio, pacing, continuity"
-}
-
-→ 201
-{
-  "project_id": "uuid",
-  "share_url": "http://localhost:3000/project/uuid"
-}
-```
-
-**Get project + annotations**
-```http
-GET /api/projects/:id
-
-→ 200
-{
-  "project": {
-    "id": "uuid",
-    "youtube_url": "...",
-    "title": "...",
-    "description": "...",
-    "tags_config": "[\"color\",\"audio\"]",
-    "created_at": "2025-10-29T12:00:00Z"
-  },
-  "annotations": [
-    {
-      "id": "uuid",
-      "project_id": "uuid",
-      "parent_id": null,
-      "author": "Alice",
-      "text": "Colour grade feels warm here",
-      "timecode": 42.5,
-      "status": 0,
-      "tags": "[\"color\"]",
-      "created_at": "..."
-    }
-  ]
-}
-```
-
-`status`: `0` = pending, `1` = accepted, `2` = rejected  
-`parent_id`: `null` for root comments, parent annotation UUID for replies
-
-Accepted URL formats: `youtube.com/watch?v=`, `youtu.be/`, `m.youtube.com`, `/embed/`, `/shorts/`, `/live/`. The URL is stored in canonical `https://www.youtube.com/watch?v=ID` form.
+`fps`: `23.976`, `24`, `25`, `29.97`, `30`, `48`, `50`, `59.94`, `60`. The old `GET /api/projects/:id/export/premiere` still returns CSV.
 
 ### Annotations
 
-**Add annotation (or reply)**
-```http
-POST /api/projects/:id/annotations
-Content-Type: application/json
+| Method & path | Who | Notes |
+|---|---|---|
+| `POST /api/projects/:id/annotations` | anyone | `{ author, text, timecode, timecode_end?, tags?, parent_id? }` → `201` with `edit_token` (returned once — keep it) |
+| `PATCH /api/annotations/:id` | author | `{ text?, tags?, timecode?, timecode_end? }` |
+| `DELETE /api/annotations/:id` | author or editor | deleting a root comment deletes its replies |
+| `PATCH /api/annotations/:id/status` | editor | `{ status, by? }` — `0` pending, `3` in progress, `1` accepted, `2` rejected |
+| `POST /api/projects/:id/annotations/bulk` | editor | `{ ids, action: "status", status, by? }` or `{ ids, action: "delete" }` |
+| `POST /api/annotations/:id/screenshot` | author or editor | raw `image/jpeg` body, max 4 MB |
+| `GET /api/annotations/:id/screenshot` | anyone | the attached frame |
 
-{
-  "author": "Alice",
-  "text": "Colour grade feels warm here",
-  "timecode": 42.5,
-  "tags": ["color"],         // only tags configured on the project are kept
-  "parent_id": null         // omit or null for root; UUID of a root comment for a reply
-}
+Replies inherit the parent's timecode; only one level of threading.
 
-→ 201
-{
-  "id": "uuid",
-  "edit_token": "uuid"      // store this — required to delete the annotation later
-}
-```
+### Admin (session cookie)
 
-**Set review status**
-```http
-PATCH /api/annotations/:id/status
-Content-Type: application/json
+| Method & path | Notes |
+|---|---|
+| `POST /api/admin/login` / `POST /api/admin/logout` / `GET /api/admin/check` | login is rate-limited to 10 attempts / 15 min per IP |
+| `POST /api/admin/password` | `{ current, next }` |
+| `GET /api/admin/projects` | projects with counts, links, expiry; storage stats; settings |
+| `PATCH /api/admin/projects/:id` | `{ pinned?, rotate_editor_token? }` |
+| `DELETE /api/admin/projects/:id` · `POST /api/admin/projects/delete` | single / `{ ids }` |
+| `GET` · `PUT /api/admin/settings` | `{ retention_days, retention_warn_days }` |
+| `GET /api/admin/cleanup/preview` · `POST /api/admin/cleanup/run` | what would be deleted / delete now |
+| `GET /api/admin/backup` | SQLite database file |
 
-{ "status": 1 }   // 0 = pending, 1 = accepted, 2 = rejected
-```
-
-**Delete annotation**
-```http
-DELETE /api/annotations/:id
-Content-Type: application/json
-
-{ "edit_token": "uuid" }   // the token returned when the annotation was created
-```
-
-Deleting a root annotation automatically deletes all its replies. The server emits `thread:deleted` (root) or `annotation:deleted` (reply) via WebSocket to all connected clients.
-
-**Export markers (Premiere Pro CSV)**
-```http
-GET /api/projects/:id/export/premiere?fps=24
-
-→ 200 text/csv
-Marker Name,Description,In,Out,Duration,Marker Type
-...
-```
-
-`fps` accepts: `23.976`, `24`, `25`, `29.97`, `30`, `48`, `50`, `59.94`, `60`. For `29.97` and `59.94` timecodes use SMPTE drop-frame (`HH:MM:SS;FF`).
-
-Replies don't need a `timecode` — they inherit the parent's. Only one level of threading is allowed.
-
-**Health check**
-```http
-GET /healthz   → 200 { "status": "ok" }
-```
-
-### Admin (session-protected)
-
-```http
-POST /api/admin/login        { "password": "..." }
-GET  /api/admin/projects     → { projects: [...], totalAnnotations: N }
-DELETE /api/admin/projects/:id
-POST /api/admin/logout
-```
-
-Login is rate-limited to **10 attempts per 15 minutes** per IP.
+`GET /healthz` → `{ "status": "ok" }` for health checks.
 
 ---
 
 ## ⚡ Real-Time Collaboration
 
-Socket.io (v4) handles live updates. Every client joins a room keyed to the project UUID on page load. The server broadcasts to the room on every write:
+Socket.io (v4). Every client joins a room named after the project ID:
 
 | Event | Payload | Trigger |
 |---|---|---|
-| `annotation:created` | full annotation object | new comment or reply added |
+| `annotation:created` | annotation | new comment or reply |
+| `annotation:updated` | annotation | edited, moved or frame attached |
+| `annotation:status` | `{ id, status, status_by, status_at }` | status changed |
 | `annotation:deleted` | `{ id }` | a reply was deleted |
 | `thread:deleted` | `{ parentId }` | a root comment (and its replies) was deleted |
-| `annotation:status` | `{ id, status }` | review status changed |
-| `project:deleted` | `{ id }` | an admin deleted the project |
+| `project:updated` | project | title, description or tags changed |
+| `project:deleted` | `{ id }` | deleted by the admin or by auto-cleanup |
 
-Clients deduplicate `annotation:created` events to avoid double-rendering their own submissions, re-join the room after a reconnect and re-fetch the project to catch up on anything missed while offline.
+Clients re-join the room after a reconnect and re-fetch the project to catch up. Text being typed into reply/edit fields survives live updates.
 
 ---
 
 ## 🔒 Security
 
-### Edit Tokens
-
-Comments can be deleted without user accounts using a one-time **edit token**. When an annotation is created, the server generates a UUID token and returns it **once** in the API response. The browser stores it in `localStorage` under `annotation_tokens`. The delete button only appears for comments whose token is present in the current browser's storage. The token is required in the DELETE request body.
-
-Legacy annotations (created before tokens were introduced) have a `NULL` token and can be deleted freely — this preserves backwards compatibility.
-
-### Admin Authentication
-
-- Password compared with `crypto.timingSafeEqual` (prevents timing attacks)
-- No hard-coded default password: if `ADMIN_PASSWORD` is unset (or left as `CHANGE_ME`), a random one is generated
-- `express-session` with `httpOnly`, `SameSite=Lax` cookies, 24-hour TTL, stored in SQLite
-- Cookies are marked `Secure` automatically when the request arrives over HTTPS (set `TRUST_PROXY` behind a reverse proxy)
-- Rate limiter: 10 login attempts per 15 minutes per IP, in-memory
-
-### Input Validation
-
-- YouTube URL parsed and reduced to its video ID; a canonical URL is stored
-- All user text HTML-escaped (including quotes) before rendering into markup or attributes
-- Types and ranges of every field are checked server-side (timecode must be a finite number, tags must belong to the project, replies must target a root comment of the same project)
-- `tags_config` limited to 8 unique tags, comma-parsed and serialised as JSON
-- CORS is disabled unless `ALLOWED_ORIGIN` is set
+- **Roles without accounts:** reviewer link vs. editor link (random key per project, revocable by the admin). Editor keys and comment tokens are compared in constant time.
+- **Admin:** no hard-coded default password (generated if unset); scrypt-hashed password once changed in the panel; `httpOnly`, `SameSite=Lax` session cookies stored in SQLite, `Secure` over HTTPS; login rate limiting.
+- **Input validation:** YouTube URLs reduced to the video ID and stored canonically; types and ranges of all fields checked server-side; tags must belong to the project; replies must target a root comment of the same project; screenshots must be JPEG and ≤ 4 MB.
+- **Output:** all user text HTML-escaped (including quotes) for markup and attributes; CORS disabled unless `ALLOWED_ORIGIN` is set.
 
 ### Production Checklist
 
-- [ ] Set a strong `ADMIN_PASSWORD` in `.env` (or keep the generated one safe)
+- [ ] Set a strong `ADMIN_PASSWORD` in `.env` (or change the generated one in the admin panel)
 - [ ] Run behind HTTPS (nginx / Caddy + Let's Encrypt) and set `TRUST_PROXY=1` and `PUBLIC_URL`
-- [ ] Back up the `data/` folder regularly
+- [ ] Back up the `data/` folder regularly (database + attached frames)
 - [ ] Consider restricting `/admin` by IP in your reverse proxy
 
 ---
@@ -410,6 +337,10 @@ Data in `./data` is kept; the database schema is migrated automatically on start
 ```bash
 docker compose stop && tar czf ofa-backup-$(date +%F).tgz data && docker compose start
 ```
+
+Or download just the database from the admin panel without stopping anything. Attached frames live in `data/screenshots/`.
+
+**Storyboard frames** are looked up from the server (`www.youtube.com`) and loaded by browsers from `i.ytimg.com`. If the server has no outbound internet access, comments simply show without preview frames.
 
 ### Nginx Reverse Proxy
 
@@ -471,6 +402,7 @@ git clone https://github.com/YoYoZ/OFA.git
 cd OFA
 npm ci
 npm run dev   # starts with nodemon
+npm test      # runs the test suite
 ```
 
 ---

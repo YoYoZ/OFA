@@ -12,7 +12,12 @@
             <div class="header-top">
                 <h1>🎬 <a href="/" class="back-link">Open Frame Annotator</a></h1>
                 <div class="header-actions">
+                    <span id="roleBadge" class="role-badge" style="display:none;"></span>
+                    <button class="header-action-btn" id="shareBtn" type="button">🔗 Share</button>
+                    <button class="header-action-btn" id="settingsBtn" type="button" style="display:none;">⚙ Settings</button>
+                    <button class="header-action-btn" id="exportBtn" type="button">⬇ Export</button>
                     <a id="reportLink" href="#" class="header-action-btn" target="_blank" rel="noopener">📄 Report</a>
+                    <button class="header-action-btn" id="helpBtn" type="button" title="Keyboard shortcuts (?)">⌨</button>
                 </div>
             </div>
             <div id="projectMeta" style="display:none;">
@@ -21,48 +26,76 @@
             </div>
         </header>
 
+        <div id="retentionBanner" class="banner banner-warn" style="display:none;"></div>
+
         <div id="loading">Loading project...</div>
+        <div id="restorePanel" class="restore-panel" style="display:none;"></div>
 
         <div id="project-content" style="display: none;">
             <div class="project-layout">
                 <!-- Left: video + controls -->
                 <div class="video-section">
-                    <div class="video-container">
+                    <div class="video-container" id="playerBox">
                         <div id="youtube-player"></div>
                     </div>
 
-                    <div class="annotation-form">
-                        <h3>Add Comment</h3>
-                        <div class="form-row">
-                            <input type="text" id="authorName" placeholder="Your name" maxlength="100" />
-                            <input type="text" id="commentText" placeholder="Comment text" maxlength="2000" />
-                        </div>
-                        <div id="tagSelector" class="tag-selector"></div>
-                        <button id="addAnnotation">Add at <span id="currentTime">00:00</span></button>
-                        <p class="shortcuts-hint">
-                            <kbd>Space</kbd> play/pause &nbsp;
-                            <kbd>←</kbd><kbd>→</kbd> ±5s &nbsp;
-                            <kbd>Shift+←</kbd><kbd>Shift+→</kbd> ±10s &nbsp;
-                            <kbd>A</kbd> focus comment
-                        </p>
+                    <div class="timeline-container">
+                        <div id="timeline" class="timeline" title="Click to seek"></div>
                     </div>
 
-                    <div class="timeline-container">
-                        <div class="timeline-header">
-                            <h3>Timeline</h3>
-                            <button class="export-btn" onclick="openExportModal()">⬇ Export Markers</button>
+                    <div class="annotation-form">
+                        <div class="form-row">
+                            <input type="text" id="authorName" placeholder="Your name" maxlength="100" />
+                            <textarea id="commentText" rows="2" placeholder="Comment — Enter to send, Shift+Enter for a new line" maxlength="2000"></textarea>
                         </div>
-                        <div id="timeline" class="timeline"></div>
+                        <div id="tagSelector" class="tag-selector"></div>
+                        <div class="form-options">
+                            <span id="rangeInfo" class="range-info"></span>
+                            <button type="button" id="frameToggle" class="option-btn" title="Attach an exact frame of the video to new comments (S)">📷 Attach frame</button>
+                            <label class="option-check" title="Pause the video as soon as you start typing">
+                                <input type="checkbox" id="autoPause" checked> Pause while typing
+                            </label>
+                        </div>
+                        <button id="addAnnotation" type="button">Add at <span id="currentTime">00:00</span></button>
+                        <p class="shortcuts-hint">
+                            <kbd>Enter</kbd> send · <kbd>I</kbd>/<kbd>O</kbd> range · <kbd>K</kbd> play/pause ·
+                            <kbd>J</kbd>/<kbd>L</kbd> shuttle · <kbd>,</kbd>/<kbd>.</kbd> frame · <kbd>N</kbd>/<kbd>P</kbd> next/prev comment ·
+                            <kbd>?</kbd> all shortcuts
+                        </p>
                     </div>
                 </div>
 
                 <!-- Right: comments list -->
                 <div class="comments-section">
                     <div class="annotations-list">
-                        <h3>
-                            Comments (<span id="annotationsCount">0</span>)
-                            <span id="progressText" class="progress-text"></span>
-                        </h3>
+                        <div class="list-header">
+                            <h3>
+                                Comments (<span id="annotationsCount">0</span>)
+                                <span id="progressText" class="progress-text"></span>
+                            </h3>
+                            <div class="filter-bar">
+                                <input type="search" id="filterSearch" placeholder="Search… (/)" />
+                                <div id="statusFilters" class="status-filters"></div>
+                                <div class="filter-row">
+                                    <select id="filterTag"><option value="">All tags</option></select>
+                                    <select id="filterAuthor"><option value="">All authors</option></select>
+                                    <select id="sortOrder">
+                                        <option value="time">By timecode</option>
+                                        <option value="newest">Newest first</option>
+                                    </select>
+                                </div>
+                                <div id="bulkBar" class="bulk-bar" style="display:none;">
+                                    <label class="option-check"><input type="checkbox" id="bulkAll"> <span id="bulkCount">0 selected</span></label>
+                                    <div class="bulk-actions">
+                                        <button type="button" data-bulk="3" title="In progress">◔</button>
+                                        <button type="button" data-bulk="1" title="Accept">✓</button>
+                                        <button type="button" data-bulk="2" title="Reject">✗</button>
+                                        <button type="button" data-bulk="0" title="Reset to pending">◯</button>
+                                        <button type="button" data-bulk="delete" title="Delete">🗑</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                         <div id="annotationsList"></div>
                     </div>
                 </div>
@@ -72,55 +105,136 @@
 
     <div id="toast-container"></div>
 
-    <!-- Export modal -->
-    <div id="export-modal" class="modal-overlay" onclick="closeExportModal(event)">
+    <!-- Share modal -->
+    <div id="share-modal" class="modal-overlay" data-modal>
         <div class="modal-dialog">
             <div class="modal-header">
-                <h3>⬇ Export Markers</h3>
-                <button class="modal-close" onclick="closeExportModal()">✕</button>
+                <h3>🔗 Share</h3>
+                <button class="modal-close" type="button" data-close>✕</button>
             </div>
             <div class="modal-body">
-                <div class="export-controls">
-                    <div class="export-row">
-                        <label for="exportFps">Frame rate</label>
-                        <select id="exportFps">
-                            <option value="23.976">23.976 fps</option>
-                            <option value="24" selected>24 fps</option>
-                            <option value="25">25 fps (PAL)</option>
-                            <option value="29.97">29.97 fps (NTSC drop-frame)</option>
-                            <option value="30">30 fps</option>
-                            <option value="48">48 fps (HFR)</option>
-                            <option value="50">50 fps</option>
-                            <option value="59.94">59.94 fps</option>
-                            <option value="60">60 fps</option>
-                        </select>
-                        <button class="export-download-btn" onclick="triggerExport()">Download CSV</button>
-                    </div>
-                    <p class="export-hint">Match this to your Premiere sequence frame rate.</p>
+                <label class="field-label">Reviewer link — can comment and reply</label>
+                <div class="share-url"><input type="text" id="reviewerLink" readonly><button type="button" data-copy="reviewerLink">Copy</button></div>
+                <div id="editorLinkBlock" style="display:none;">
+                    <label class="field-label">Editor link — can also accept/reject, moderate and change settings</label>
+                    <div class="share-url"><input type="text" id="editorLink" readonly><button type="button" data-copy="editorLink">Copy</button></div>
+                    <p class="export-hint">Keep the editor link private. The admin can revoke it from the admin panel.</p>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Settings modal (editor) -->
+    <div id="settings-modal" class="modal-overlay" data-modal>
+        <div class="modal-dialog">
+            <div class="modal-header">
+                <h3>⚙ Project settings</h3>
+                <button class="modal-close" type="button" data-close>✕</button>
+            </div>
+            <div class="modal-body settings-form">
+                <label class="field-label" for="setTitle">Title</label>
+                <input type="text" id="setTitle" maxlength="100">
+                <label class="field-label" for="setDescription">Description</label>
+                <input type="text" id="setDescription" maxlength="500">
+                <label class="field-label" for="setTags">Tags (comma-separated, max 8)</label>
+                <input type="text" id="setTags" maxlength="300">
+                <div class="modal-actions">
+                    <button type="button" class="export-download-btn" id="saveSettings">Save</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Export modal -->
+    <div id="export-modal" class="modal-overlay" data-modal>
+        <div class="modal-dialog modal-wide">
+            <div class="modal-header">
+                <h3>⬇ Export</h3>
+                <button class="modal-close" type="button" data-close>✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="export-grid">
+                    <label for="exportFormat">Format</label>
+                    <select id="exportFormat">
+                        <option value="edl">DaVinci Resolve — markers (EDL)</option>
+                        <option value="xml">Premiere Pro — markers (FCP XML)</option>
+                        <option value="srt">Subtitles on screen (SRT) — Premiere &amp; Resolve</option>
+                        <option value="csv">Spreadsheet (CSV)</option>
+                    </select>
+
+                    <label for="exportFps" data-for="fps">Frame rate</label>
+                    <select id="exportFps" data-for="fps">
+                        <option value="23.976">23.976 fps</option>
+                        <option value="24" selected>24 fps</option>
+                        <option value="25">25 fps (PAL)</option>
+                        <option value="29.97">29.97 fps (drop-frame)</option>
+                        <option value="30">30 fps</option>
+                        <option value="48">48 fps</option>
+                        <option value="50">50 fps</option>
+                        <option value="59.94">59.94 fps (drop-frame)</option>
+                        <option value="60">60 fps</option>
+                    </select>
+
+                    <label for="exportStart" data-for="start">Timeline starts at</label>
+                    <select id="exportStart" data-for="start">
+                        <option value="01:00:00:00">01:00:00:00 (Resolve / broadcast default)</option>
+                        <option value="00:00:00:00">00:00:00:00 (Premiere default)</option>
+                        <option value="10:00:00:00">10:00:00:00</option>
+                    </select>
+
+                    <label for="exportColor" data-for="color">Marker color</label>
+                    <select id="exportColor" data-for="color">
+                        <option value="status">By status</option>
+                        <option value="tag">By first tag</option>
+                    </select>
+
+                    <label>Include</label>
+                    <div id="exportStatuses" class="export-statuses"></div>
+                </div>
+                <button class="export-download-btn export-go" type="button" id="exportDownload">Download</button>
+
                 <div class="tutorial-divider"></div>
-                <div class="tutorial-section">
-                    <h4>How to import in Adobe Premiere Pro</h4>
-                    <ol class="tutorial-steps">
-                        <li>Select your frame rate above and click <strong>Download CSV</strong>.</li>
-                        <li>Open the <strong>Markers</strong> panel in Premiere Pro.<span class="tutorial-hint">Window → Markers</span></li>
-                        <li>Click the <strong>panel menu icon</strong> (≡) in the top-right corner of the Markers panel.</li>
-                        <li>Choose <strong>"Import Markers from CSV…"</strong> and select the downloaded file.</li>
-                        <li>Markers appear on your timeline labeled with author name and comment text.</li>
-                    </ol>
-                    <div class="tutorial-note">
-                        <strong>DaVinci Resolve:</strong> Markers panel → panel menu (⋮) → <em>Import Markers from CSV</em>. Same file works.
-                    </div>
-                    <div class="tutorial-note" style="margin-top: 8px;">
-                        <strong>Note on 29.97 / 59.94:</strong> timecodes are exported in SMPTE drop-frame format (<code>HH:MM:SS;FF</code>). Use a drop-frame sequence in your NLE.
-                    </div>
-                </div>
+                <div class="tutorial-section" id="exportHelp"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Keyboard shortcuts -->
+    <div id="help-modal" class="modal-overlay" data-modal>
+        <div class="modal-dialog modal-wide">
+            <div class="modal-header">
+                <h3>⌨ Keyboard shortcuts</h3>
+                <button class="modal-close" type="button" data-close>✕</button>
+            </div>
+            <div class="modal-body shortcuts-table">
+                <h4>Playback</h4>
+                <div><kbd>Space</kbd> / <kbd>K</kbd><span>Play / pause</span></div>
+                <div><kbd>J</kbd> / <kbd>L</kbd><span>Slower or back 5 s / play, faster (1× → 1.5× → 2×)</span></div>
+                <div><kbd>←</kbd> / <kbd>→</kbd><span>Seek ±5 s (with <kbd>Shift</kbd> ±10 s)</span></div>
+                <div><kbd>,</kbd> / <kbd>.</kbd><span>Step one frame back / forward</span></div>
+                <h4>Commenting</h4>
+                <div><kbd>A</kbd> / <kbd>C</kbd><span>Focus the comment field</span></div>
+                <div><kbd>Enter</kbd><span>Send (in comment, reply and edit fields)</span></div>
+                <div><kbd>Shift+Enter</kbd><span>New line</span></div>
+                <div><kbd>I</kbd> / <kbd>O</kbd><span>Set range in / out at the current time</span></div>
+                <div><kbd>X</kbd><span>Clear range</span></div>
+                <div><kbd>S</kbd><span>Toggle “Attach frame”</span></div>
+                <h4>Navigating comments</h4>
+                <div><kbd>N</kbd> / <kbd>P</kbd><span>Next / previous comment (seeks the video)</span></div>
+                <div><kbd>R</kbd><span>Reply to the selected comment</span></div>
+                <div><kbd>E</kbd><span>Edit the selected comment (your own)</span></div>
+                <div><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> <kbd>0</kbd><span>Accept / reject / in progress / pending (editor)</span></div>
+                <div><kbd>Del</kbd><span>Delete the selected comment</span></div>
+                <div><kbd>/</kbd><span>Search comments</span></div>
+                <div><kbd>Esc</kbd><span>Close dialogs, cancel editing, clear selection</span></div>
+                <div><kbd>?</kbd><span>This help</span></div>
             </div>
         </div>
     </div>
 
     <script src="https://www.youtube.com/iframe_api"></script>
     <script src="/socket.io/socket.io.js"></script>
+    <script src="/common.js"></script>
     <script src="/project.js"></script>
 </body>
 </html>

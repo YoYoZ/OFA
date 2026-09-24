@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Open Frame Annotator</title>
-    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="/style.css">
 </head>
 <body>
     <div class="container">
@@ -33,84 +33,171 @@
                     <input type="text" id="projectTags" placeholder="e.g. color, audio, pacing, continuity" maxlength="200" />
                     <p class="field-hint">Tags let reviewers categorise each comment. Max 8 tags.</p>
                 </div>
-                <button onclick="createProject()">Create Project</button>
+                <button type="button" id="createBtn">Create Project</button>
             </div>
 
             <div id="result" style="display: none;">
                 <h3>✅ Project created!</h3>
+                <label class="link-label">Reviewer link — send this to everyone who should comment</label>
                 <div class="share-url">
                     <input type="text" id="shareUrl" readonly />
-                    <button onclick="copyUrl()">Copy Link</button>
+                    <button type="button" data-copy="shareUrl">Copy</button>
                 </div>
-                <a id="openProject" href="#" target="_blank" rel="noopener">Open Project →</a>
+                <label class="link-label">Editor link — for you: accept/reject comments, moderate, change settings. Keep it private.</label>
+                <div class="share-url">
+                    <input type="text" id="editorUrl" readonly />
+                    <button type="button" data-copy="editorUrl">Copy</button>
+                </div>
+                <a id="openProject" href="#">Open as editor →</a>
             </div>
+        </div>
+
+        <div class="my-projects" id="myProjects" style="display:none;">
+            <div class="my-projects-header">
+                <h2>My projects</h2>
+                <div>
+                    <button type="button" class="small-btn" id="exportBackup" title="Download everything this browser remembers as a JSON file">⬇ Export backup</button>
+                    <button type="button" class="small-btn" id="importBackup">⬆ Import backup</button>
+                    <input type="file" id="importFile" accept="application/json,.json" hidden>
+                </div>
+            </div>
+            <p class="hint">Projects you opened in this browser. A copy of every project, your comments and your editor links is kept locally,
+                so you can restore a project if it disappears from the server.</p>
+            <div id="projectRows"></div>
         </div>
     </div>
 
+    <div id="toast-container"></div>
+
+    <script src="/common.js"></script>
     <script>
+        const $ = (id) => document.getElementById(id);
+
         let creating = false;
         async function createProject() {
             if (creating) return;
-            const title = document.getElementById('projectTitle').value.trim();
-            const url = document.getElementById('youtubeUrl').value.trim();
-            const description = document.getElementById('projectDescription').value.trim();
-            const tags = document.getElementById('projectTags').value.trim();
+            const title = $('projectTitle').value.trim();
+            const url = $('youtubeUrl').value.trim();
+            const description = $('projectDescription').value.trim();
+            const tags = $('projectTags').value.trim();
 
-            if (!title) { alert('Please enter a project title'); return; }
-            if (!url) { alert('Please enter a YouTube URL'); return; }
+            if (!title) { showToast('Please enter a project title', 'error'); $('projectTitle').focus(); return; }
+            if (!url) { showToast('Please enter a YouTube URL', 'error'); $('youtubeUrl').focus(); return; }
 
             creating = true;
             try {
-                const response = await fetch('/api/projects', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        youtube_url: url,
-                        title,
-                        description: description || undefined,
-                        tags_config: tags || undefined
-                    })
+                const data = await api('POST', '/api/projects', {
+                    youtube_url: url, title,
+                    description: description || undefined,
+                    tags_config: tags || undefined
                 });
+                EditorKeys.set(data.project_id, data.editor_token);
+                const full = await api('GET', `/api/projects/${encodeURIComponent(data.project_id)}`, undefined, { projectId: data.project_id });
+                await Backup.saveSnapshot(full.project, full.annotations, { opened: true, createdByMe: true });
 
-                if (!response.ok) {
-                    const err = await response.json().catch(() => ({}));
-                    throw new Error(err.error || 'Failed to create project');
-                }
-
-                const data = await response.json();
-                document.getElementById('shareUrl').value = data.share_url;
-                document.getElementById('openProject').href = data.share_url;
-                document.getElementById('result').style.display = 'block';
-                document.getElementById('youtubeUrl').value = '';
-                document.getElementById('projectTitle').value = '';
-                document.getElementById('projectDescription').value = '';
-                document.getElementById('projectTags').value = '';
+                // Show links for this server as the user sees it
+                const base = `${window.location.origin}/project/${data.project_id}`;
+                $('shareUrl').value = base;
+                $('editorUrl').value = `${base}#key=${data.editor_token}`;
+                $('openProject').href = `/project/${data.project_id}`;
+                $('result').style.display = 'block';
+                ['youtubeUrl', 'projectTitle', 'projectDescription', 'projectTags'].forEach(id => { $(id).value = ''; });
+                renderMyProjects();
             } catch (error) {
-                alert(error.message || 'Error creating project. Please try again.');
+                showToast(error.message || 'Error creating project. Please try again.', 'error');
             } finally {
                 creating = false;
             }
         }
 
-        function copyUrl() {
-            const url = document.getElementById('shareUrl').value;
-            navigator.clipboard.writeText(url).then(() => {
-                const btn = document.querySelector('.share-url button');
-                const original = btn.textContent;
-                btn.textContent = 'Copied!';
-                setTimeout(() => { btn.textContent = original; }, 2000);
-            }).catch(() => {
-                const input = document.getElementById('shareUrl');
-                input.select();
-                document.execCommand('copy');
-            });
+        async function renderMyProjects() {
+            const entries = (await Backup.list()).sort((a, b) => String(b.lastOpened).localeCompare(String(a.lastOpened)));
+            $('myProjects').style.display = '';
+            if (!entries.length) {
+                $('projectRows').innerHTML = '<p class="hint">Nothing here yet. Projects you create or open will appear here — or import a backup from another browser.</p>';
+                return;
+            }
+
+            $('projectRows').innerHTML = entries.map(e => {
+                const roots = (e.annotations || []).filter(a => !a.parent_id);
+                const open = roots.filter(a => !a.status || a.status === 3).length;
+                const videoId = extractVideoId(e.project.youtube_url);
+                const id = escapeHtml(e.id);
+                return `
+                    <div class="project-row" data-row="${id}">
+                        ${videoId ? `<img class="sb-thumb" src="https://img.youtube.com/vi/${videoId}/default.jpg" alt="" style="width:80px;height:45px;object-fit:cover">` : ''}
+                        <div class="row-main">
+                            <a class="row-title" href="/project/${encodeURIComponent(e.id)}">${escapeHtml(e.project.title || 'Untitled project')}</a>
+                            ${e.editorKey ? '<span class="role-badge editor" style="margin-left:8px">Editor</span>' : ''}
+                            <div class="row-meta">
+                                ${roots.length} comments · ${open} open · ${e.mine || 0} yours · opened ${escapeHtml(timeAgo(e.lastOpened))}
+                                <span class="row-state" data-state="${id}"></span>
+                            </div>
+                        </div>
+                        <button type="button" class="small-btn" data-forget="${id}" title="Remove from this list and delete the local copy">✕</button>
+                    </div>`;
+            }).join('');
+
+            // Check which projects still exist on the server
+            for (const e of entries.slice(0, 30)) {
+                fetch(`/api/projects/${encodeURIComponent(e.id)}`, { method: 'GET' }).then(res => {
+                    if (res.status !== 404) return;
+                    const state = document.querySelector(`[data-state="${CSS.escape(e.id)}"]`);
+                    if (state) state.innerHTML = ` · <span class="row-state-missing">deleted on server</span>
+                        <button type="button" class="small-btn primary" data-restore="${escapeHtml(e.id)}">Restore</button>`;
+                }).catch(() => {});
+            }
         }
 
-        document.querySelectorAll('.create-form input').forEach(input => {
-            input.addEventListener('keydown', function(e) {
-                if (e.key === 'Enter' && !e.isComposing) createProject();
-            });
+        document.addEventListener('click', async (e) => {
+            const copyBtn = e.target.closest('[data-copy]');
+            if (copyBtn && await copyText($(copyBtn.dataset.copy).value)) {
+                const old = copyBtn.textContent; copyBtn.textContent = 'Copied!';
+                setTimeout(() => { copyBtn.textContent = old; }, 1500);
+            }
+            const forget = e.target.closest('[data-forget]');
+            if (forget && confirm('Remove this project from the list? The local backup copy is deleted too (the project on the server is not touched).')) {
+                await Backup.remove(forget.dataset.forget);
+                renderMyProjects();
+            }
+            const restore = e.target.closest('[data-restore]');
+            if (restore) {
+                restore.disabled = true;
+                try {
+                    const result = await Backup.restore(restore.dataset.restore);
+                    showToast(`Restored with ${result.restored} comments`, 'success');
+                    renderMyProjects();
+                } catch (err) {
+                    showToast(err.message, 'error');
+                    restore.disabled = false;
+                }
+            }
         });
+
+        $('createBtn').addEventListener('click', createProject);
+        document.querySelectorAll('.create-form input').forEach(input => {
+            input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) createProject(); });
+        });
+
+        $('exportBackup').addEventListener('click', async () => {
+            const n = await Backup.exportFile();
+            showToast(`Exported ${n} project(s)`, 'success');
+        });
+        $('importBackup').addEventListener('click', () => $('importFile').click());
+        $('importFile').addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            e.target.value = '';
+            if (!file) return;
+            try {
+                const n = await Backup.importFile(file);
+                showToast(`Imported ${n} project(s)`, 'success');
+                renderMyProjects();
+            } catch (err) {
+                showToast(err.message || 'Import failed', 'error');
+            }
+        });
+
+        renderMyProjects();
     </script>
 </body>
 </html>

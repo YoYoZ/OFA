@@ -18,6 +18,8 @@ RUN apk add --no-cache tini su-exec
 
 COPY --from=deps /app/node_modules ./node_modules
 COPY package.json server.js ./
+COPY lib ./lib
+COPY scripts ./scripts
 COPY public ./public
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN sed -i 's/\r$//' /usr/local/bin/docker-entrypoint.sh \
