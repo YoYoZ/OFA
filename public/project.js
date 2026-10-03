@@ -129,7 +129,7 @@ document.addEventListener('DOMContentLoaded', () => {
   $('commentText').addEventListener('input', onCommentInput);
   $('addAnnotation').addEventListener('click', addAnnotation);
   $('frameToggle').addEventListener('click', toggleAttachFrame);
-  $('rangeInfo').addEventListener('click', (e) => { if (e.target.closest('[data-clear-range]')) clearRange(); });
+  setupRangeControls();
 
   $('tagSelector').addEventListener('click', (e) => {
     const chip = e.target.closest('.tag-chip');
@@ -151,7 +151,7 @@ document.addEventListener('DOMContentLoaded', () => {
   setupTimeline();
   setupModals();
   setupKeyboard();
-  renderRangeInfo();
+  renderRange();
   loadProject();
 });
 
@@ -283,7 +283,8 @@ function initializePlayer() {
     $('youtube-player').innerHTML = '';
     player = new YT.Player('youtube-player', {
       height: '100%', width: '100%', videoId,
-      playerVars: { autoplay: 0, playsinline: 1, rel: 0, modestbranding: 1, origin: window.location.origin, enablejsapi: 1 },
+      // disablekb: our own shortcuts replace YouTube's, which only work while the iframe has focus
+      playerVars: { autoplay: 0, playsinline: 1, rel: 0, modestbranding: 1, disablekb: 1, origin: window.location.origin, enablejsapi: 1 },
       events: { onReady: onPlayerReady, onStateChange: onPlayerStateChange, onError: onPlayerError }
     });
   } catch (error) {
@@ -324,7 +325,7 @@ function tick() {
 function updateAddButton(t = currentTime()) {
   const label = $('currentTime');
   if (rangeIn !== null) {
-    label.textContent = rangeOut !== null ? `${formatTime(rangeIn)}–${formatTime(rangeOut)}` : `${formatTime(rangeIn)}`;
+    label.textContent = rangeOut !== null ? `${formatTime(rangeIn)}–${formatTime(rangeOut)}` : formatTime(rangeIn);
   } else {
     label.textContent = formatTime(draftTimecode !== null ? draftTimecode : t);
   }
@@ -382,7 +383,8 @@ function onCommentInput() {
   if (text.trim() && draftTimecode === null) {
     draftTimecode = currentTime();
     if ($('autoPause').checked && isPlaying()) {
-      try { player.pauseVideo(); player.seekTo(draftTimecode, true); } catch {}
+      // No seek here: seeking right after pausing can race and resume playback
+      try { player.pauseVideo(); } catch {}
     }
   } else if (!text.trim()) {
     draftTimecode = null;
@@ -390,33 +392,125 @@ function onCommentInput() {
   updateAddButton();
 }
 
+// ── Range selection (In/Out fields, buttons, drag lane under the timeline) ──
+
+// Accepts 83, 1:23, 01:23.5, 1:02:03
+function parseTimeInput(value) {
+  const s = String(value || '').trim().replace(',', '.');
+  if (!s) return null;
+  if (!/^\d+(:\d{1,2}){0,2}(\.\d+)?$/.test(s)) return NaN;
+  return s.split(':').reduce((acc, part) => acc * 60 + parseFloat(part), 0);
+}
+
+function setRange(start, end) {
+  if (start !== null && end !== null && end < start) [start, end] = [end, start];
+  if (start !== null && end !== null && end - start < 0.2) end = null;
+  rangeIn = start;
+  rangeOut = start === null ? null : end;
+  renderRange();
+}
+
 function setRangePoint(which) {
   const t = currentTime();
-  if (which === 'in') {
-    rangeIn = t;
-    if (rangeOut !== null && rangeOut <= rangeIn) rangeOut = null;
-  } else {
-    if (rangeIn === null || t <= rangeIn) { showToast('Set the in point (I) before the out point', 'error'); return; }
-    rangeOut = t;
-  }
-  renderRangeInfo();
+  if (which === 'in') setRange(t, rangeOut !== null && rangeOut > t ? rangeOut : null);
+  else if (rangeIn === null || t <= rangeIn) setRange(Math.max(0, t - 5), t); // no start yet: take the last 5 s
+  else setRange(rangeIn, t);
 }
 
 function clearRange() {
-  rangeIn = rangeOut = null;
-  renderRangeInfo();
+  setRange(null, null);
 }
 
-function renderRangeInfo() {
-  const el = $('rangeInfo');
-  if (rangeIn === null) {
-    el.innerHTML = '<span class="meta-muted">Range: <kbd>I</kbd> in, <kbd>O</kbd> out</span>';
-  } else {
-    el.innerHTML = `<span class="range-set">Range ${formatTime(rangeIn)} – ${rangeOut !== null ? formatTime(rangeOut) : '<em>press O</em>'}</span>
-      <button type="button" data-clear-range title="Clear range (X)">✕</button>`;
-  }
+function setupRangeControls() {
+  $('setIn').addEventListener('click', () => setRangePoint('in'));
+  $('setOut').addEventListener('click', () => setRangePoint('out'));
+  $('clearRangeBtn').addEventListener('click', clearRange);
+
+  const applyInputs = () => {
+    const a = parseTimeInput($('rangeInInput').value);
+    const b = parseTimeInput($('rangeOutInput').value);
+    if (Number.isNaN(a) || Number.isNaN(b)) { showToast('Use a time like 1:23 or 0:01:23', 'error'); return renderRange(); }
+    if (a === null && b !== null) return setRange(Math.max(0, b - 5), b);
+    setRange(a, b);
+    if (rangeIn !== null) seekToTime(rangeIn);
+  };
+  ['rangeInInput', 'rangeOutInput'].forEach(id => {
+    const input = $(id);
+    input.addEventListener('change', applyInputs);
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+      if (e.key === 'Escape') { e.preventDefault(); renderRange(); input.blur(); }
+    });
+  });
+
+  // Drag on the lane to select; drag a handle to adjust. The video follows the pointer.
+  const lane = $('rangeLane');
+  lane.addEventListener('pointerdown', (e) => {
+    const max = timelineMax();
+    if (!max || e.button !== 0) return;
+    e.preventDefault();
+    const rect = lane.getBoundingClientRect();
+    const toTime = (x) => Math.min(1, Math.max(0, (x - rect.left) / rect.width)) * max;
+    const handle = e.target.closest('[data-handle]');
+    let anchor;
+    if (handle && rangeIn !== null && rangeOut !== null) anchor = handle.dataset.handle === 'in' ? rangeOut : rangeIn;
+    else anchor = toTime(e.clientX);
+    const startX = e.clientX;
+    let moved = !!handle;
+    try { player.pauseVideo(); } catch {}
+    try { lane.setPointerCapture(e.pointerId); } catch {}
+    lane.classList.add('dragging');
+
+    const onMove = (ev) => {
+      if (Math.abs(ev.clientX - startX) > 3) moved = true;
+      if (!moved) return;
+      const t = toTime(ev.clientX);
+      rangeIn = Math.min(anchor, t);
+      rangeOut = Math.max(anchor, t);
+      renderRangeSelection();
+      try { player.seekTo(t, false); } catch {}
+    };
+    const onUp = (ev) => {
+      lane.removeEventListener('pointermove', onMove);
+      lane.removeEventListener('pointerup', onUp);
+      lane.removeEventListener('pointercancel', onUp);
+      lane.classList.remove('dragging');
+      if (!moved) {
+        // A plain click on the lane just seeks
+        seekToTime(toTime(ev.clientX));
+        return;
+      }
+      setRange(rangeIn, rangeOut);
+      if (rangeIn !== null) seekToTime(rangeIn);
+    };
+    lane.addEventListener('pointermove', onMove);
+    lane.addEventListener('pointerup', onUp);
+    lane.addEventListener('pointercancel', onUp);
+  });
+}
+
+function renderRangeSelection() {
+  const sel = $('rangeSel');
+  const max = timelineMax();
+  const has = rangeIn !== null && max > 0;
+  $('rangeLane').classList.toggle('has-range', has);
+  if (!has) { sel.style.display = 'none'; return; }
+  const end = rangeOut !== null ? rangeOut : rangeIn;
+  sel.style.display = 'block';
+  sel.style.left = `${(rangeIn / max) * 100}%`;
+  sel.style.width = `${Math.max(0.4, ((end - rangeIn) / max) * 100)}%`;
+  $('rangeSelLabel').textContent = rangeOut !== null ? `${formatTime(rangeIn)}–${formatTime(rangeOut)}` : formatTime(rangeIn);
+}
+
+function renderRange() {
+  const inEl = $('rangeInInput'), outEl = $('rangeOutInput');
+  if (document.activeElement !== inEl) inEl.value = rangeIn !== null ? formatTime(rangeIn) : '';
+  if (document.activeElement !== outEl) outEl.value = rangeOut !== null ? formatTime(rangeOut) : '';
+  $('clearRangeBtn').style.display = rangeIn !== null ? '' : 'none';
+  $('rangeHint').style.display = rangeIn !== null ? 'none' : '';
+  document.querySelector('.range-controls').classList.toggle('active', rangeIn !== null);
+  renderRangeSelection();
   updateAddButton();
-  renderTimeline();
 }
 
 function renderTagSelector() {
@@ -552,7 +646,7 @@ const FrameCapture = {
 function setAttachFrame(on) {
   attachFrame = on;
   $('frameToggle').classList.toggle('active', on);
-  $('frameToggle').textContent = on ? '📷 Frame: on' : '📷 Attach frame';
+  $('frameToggle').textContent = on ? '📷 Exact frame: on' : '📷 Exact frame';
   renderList();
 }
 
@@ -1024,10 +1118,6 @@ function renderTimeline() {
       html += `<div class="timeline-range" data-seek="${Number(a.timecode)}" style="left:${left}%;width:${width}%;background:${STATUS[a.status || 0].color}"
                     title="${escapeHtml(`${a.author}: ${a.text} (${formatRange(a)})`)}"></div>`;
     });
-    if (rangeIn !== null) {
-      const end = rangeOut !== null ? rangeOut : rangeIn;
-      html += `<div class="timeline-draft-range" style="left:${(rangeIn / maxTime) * 100}%;width:${Math.max(0.3, ((end - rangeIn) / maxTime) * 100)}%"></div>`;
-    }
 
     timelineClusters = clusterAnnotations(list, maxTime);
     timelineClusters.forEach((cluster, idx) => {
@@ -1047,6 +1137,7 @@ function renderTimeline() {
   }
   html += '<div class="timeline-playhead" id="playhead"></div><div class="timeline-preview" id="timelinePreview"></div>';
   timeline.innerHTML = html;
+  renderRangeSelection();
   tick();
 }
 
@@ -1321,6 +1412,15 @@ function setupExportModal() {
 // ── Keyboard ──────────────────────────────────────────────────────────────────
 
 function setupKeyboard() {
+  // Clicking the YouTube player moves keyboard focus into its iframe, where our page no longer
+  // receives key presses. Take focus back right away so shortcuts keep working after a click.
+  window.addEventListener('blur', () => {
+    setTimeout(() => {
+      const el = document.activeElement;
+      if (el && el.tagName === 'IFRAME') { el.blur(); window.focus(); }
+    }, 0);
+  });
+
   // Enter sends in every comment field; Shift+Enter adds a line
   document.addEventListener('keydown', (e) => {
     const field = e.target;

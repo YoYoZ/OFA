@@ -239,7 +239,42 @@ app.use(session({
   cookie: { maxAge: SESSION_TTL_MS, httpOnly: true, sameSite: 'lax', secure: 'auto' }
 }));
 
-app.use(express.static(path.join(__dirname, 'public')));
+// ── Static files & cache control ────────────────────────────────────────────
+// Asset URLs carry ?v=<content hash>, so they can be cached forever while HTML and API
+// responses are always revalidated. Explicit no-cache/no-store also stops CDNs such as
+// Cloudflare from stretching the browser cache lifetime ("Browser Cache TTL").
+
+const PUBLIC_DIR = path.join(__dirname, 'public');
+const ASSET_VERSION = (() => {
+  const hash = crypto.createHash('sha1');
+  for (const f of fs.readdirSync(PUBLIC_DIR).sort()) {
+    if (/\.(js|css)$/.test(f)) hash.update(f).update(fs.readFileSync(path.join(PUBLIC_DIR, f)));
+  }
+  return hash.digest('hex').slice(0, 10);
+})();
+
+const pageCache = new Map();
+function sendPage(name) {
+  return (req, res) => {
+    if (!pageCache.has(name)) {
+      pageCache.set(name, fs.readFileSync(path.join(PUBLIC_DIR, name), 'utf8').replace(/__ASSET_VERSION__/g, ASSET_VERSION));
+    }
+    res.setHeader('Cache-Control', 'no-cache');
+    res.type('html').send(pageCache.get(name));
+  };
+}
+
+app.use((req, res, next) => {
+  if (req.path.startsWith('/api/')) res.setHeader('Cache-Control', 'no-store');
+  else if (req.query.v) res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+  else res.setHeader('Cache-Control', 'no-cache');
+  next();
+});
+
+app.get(['/', '/index.html'], sendPage('index.html'));
+app.get(['/admin', '/admin.html'], sendPage('admin.html'));
+app.get(['/project.html', '/report.html'], (req, res) => res.redirect('/'));
+app.use(express.static(PUBLIC_DIR, { index: false, cacheControl: false }));
 
 // ── Socket.io ────────────────────────────────────────────────────────────────
 
@@ -1049,10 +1084,8 @@ app.get('/api/projects/:id/export/:format', ah((req, res) => exportProject(req, 
 
 // ── Static + page routes ─────────────────────────────────────────────────────
 
-app.get('/admin', (req, res) => res.sendFile(path.join(__dirname, 'public', 'admin.html')));
-app.get('/project/:id/report', (req, res) => res.sendFile(path.join(__dirname, 'public', 'report.html')));
-app.get('/project/:id', (req, res) => res.sendFile(path.join(__dirname, 'public', 'project.html')));
-app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
+app.get('/project/:id/report', sendPage('report.html'));
+app.get('/project/:id', sendPage('project.html'));
 app.use((req, res) => res.status(404).json({ error: 'Not found' }));
 
 // eslint-disable-next-line no-unused-vars

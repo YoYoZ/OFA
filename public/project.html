@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Project - Open Frame Annotator</title>
-    <link rel="stylesheet" href="/style.css">
+    <link rel="stylesheet" href="/style.css?v=__ASSET_VERSION__">
 </head>
 <body>
     <div class="container">
@@ -41,26 +41,43 @@
 
                     <div class="timeline-container">
                         <div id="timeline" class="timeline" title="Click to seek"></div>
+                        <div id="rangeLane" class="range-lane" title="Drag to select a range for your comment">
+                            <span class="range-lane-hint">Drag here to select a range</span>
+                            <div id="rangeSel" class="range-sel">
+                                <span class="range-handle" data-handle="in"></span>
+                                <span class="range-sel-label" id="rangeSelLabel"></span>
+                                <span class="range-handle" data-handle="out"></span>
+                            </div>
+                        </div>
                     </div>
 
                     <div class="annotation-form">
-                        <div class="form-row">
-                            <input type="text" id="authorName" placeholder="Your name" maxlength="100" />
-                            <textarea id="commentText" rows="2" placeholder="Comment — Enter to send, Shift+Enter for a new line" maxlength="2000"></textarea>
-                        </div>
+                        <textarea id="commentText" rows="2" placeholder="Write a comment — Enter to send, Shift+Enter for a new line" maxlength="2000"></textarea>
                         <div id="tagSelector" class="tag-selector"></div>
-                        <div class="form-options">
-                            <span id="rangeInfo" class="range-info"></span>
-                            <button type="button" id="frameToggle" class="option-btn" title="Attach an exact frame of the video to new comments (S)">📷 Attach frame</button>
+                        <div class="range-controls">
+                            <span class="range-title">Range</span>
+                            <button type="button" class="option-btn" id="setIn" title="Set the start to the current frame (I)">⇤ In</button>
+                            <input type="text" id="rangeInInput" class="tc-input" placeholder="--:--" title="Start, e.g. 1:23">
+                            <span class="range-dash">–</span>
+                            <input type="text" id="rangeOutInput" class="tc-input" placeholder="--:--" title="End, e.g. 1:30">
+                            <button type="button" class="option-btn" id="setOut" title="Set the end to the current frame (O)">Out ⇥</button>
+                            <button type="button" class="option-btn" id="clearRangeBtn" title="Clear the range (X)">✕</button>
+                            <span class="range-hint" id="rangeHint">or drag under the timeline</span>
+                        </div>
+                        <div class="form-footer">
+                            <label class="author-field" title="Your name is shown next to your comments">
+                                <span>As</span>
+                                <input type="text" id="authorName" placeholder="Your name" maxlength="100" />
+                            </label>
+                            <button type="button" id="frameToggle" class="option-btn" title="Attach an exact screenshot of the player to new comments instead of the approximate YouTube preview (S)">📷 Exact frame</button>
                             <label class="option-check" title="Pause the video as soon as you start typing">
                                 <input type="checkbox" id="autoPause" checked> Pause while typing
                             </label>
+                            <button id="addAnnotation" type="button">Add at <span id="currentTime">00:00</span></button>
                         </div>
-                        <button id="addAnnotation" type="button">Add at <span id="currentTime">00:00</span></button>
                         <p class="shortcuts-hint">
-                            <kbd>Enter</kbd> send · <kbd>I</kbd>/<kbd>O</kbd> range · <kbd>K</kbd> play/pause ·
-                            <kbd>J</kbd>/<kbd>L</kbd> shuttle · <kbd>,</kbd>/<kbd>.</kbd> frame · <kbd>N</kbd>/<kbd>P</kbd> next/prev comment ·
-                            <kbd>?</kbd> all shortcuts
+                            Outside text fields: <kbd>Space</kbd> play/pause · <kbd>←</kbd><kbd>→</kbd> seek · <kbd>I</kbd>/<kbd>O</kbd> range ·
+                            <kbd>N</kbd>/<kbd>P</kbd> next comment · <kbd>Esc</kbd> leaves a field · <kbd>?</kbd> all shortcuts
                         </p>
                     </div>
                 </div>
@@ -234,7 +251,7 @@
 
     <script src="https://www.youtube.com/iframe_api"></script>
     <script src="/socket.io/socket.io.js"></script>
-    <script src="/common.js"></script>
-    <script src="/project.js"></script>
+    <script src="/common.js?v=__ASSET_VERSION__"></script>
+    <script src="/project.js?v=__ASSET_VERSION__"></script>
 </body>
 </html>

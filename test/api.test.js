@@ -377,3 +377,25 @@ test('admin: change password, other sessions logged out, survives restart', asyn
   assert.equal((await req('POST', '/api/admin/login', { password: 'newpassword1' })).status, 401);
   assert.equal((await req('POST', '/api/admin/login', { password: adminPassword })).status, 200);
 });
+
+test('caching: versioned assets are immutable, pages and API are never cached', async () => {
+  const page = await fetch(`${srv.base}/project/whatever`);
+  const html = await page.text();
+  assert.equal(page.headers.get('cache-control'), 'no-cache');
+  const m = html.match(/\/project\.js\?v=([0-9a-f]{10})"/);
+  assert.ok(m, 'project.js is referenced with a content hash');
+  assert.doesNotMatch(html, /__ASSET_VERSION__/);
+
+  const asset = await fetch(`${srv.base}/project.js?v=${m[1]}`);
+  assert.equal(asset.status, 200);
+  assert.equal(asset.headers.get('cache-control'), 'public, max-age=31536000, immutable');
+  assert.equal((await fetch(`${srv.base}/project.js`)).headers.get('cache-control'), 'no-cache');
+
+  const apiRes = await fetch(`${srv.base}/api/admin/check`);
+  assert.equal(apiRes.headers.get('cache-control'), 'no-store');
+  for (const p of ['/', '/admin', '/project/x/report']) {
+    const r = await fetch(srv.base + p);
+    assert.equal(r.status, 200, p);
+    assert.doesNotMatch(await r.text(), /__ASSET_VERSION__/, p);
+  }
+});

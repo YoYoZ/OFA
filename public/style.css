@@ -1359,3 +1359,150 @@ kbd {
     .shortcuts-table > div { grid-template-columns: 1fr; gap: 2px; }
     .annotation-actions { flex-direction: row; flex-wrap: wrap; }
 }
+
+/* ── Range selection lane & controls ─────────────────────────────────────── */
+
+.range-lane {
+    position: relative;
+    height: 26px;
+    margin-top: 6px;
+    background: repeating-linear-gradient(90deg, #1d1d1d 0 10px, #202020 10px 20px);
+    border: 1px dashed #3a3a3a;
+    border-radius: 6px;
+    cursor: crosshair;
+    touch-action: none;
+    user-select: none;
+}
+.range-lane:hover { border-color: #64b5f6; }
+.range-lane-hint {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.72rem;
+    color: #555;
+    pointer-events: none;
+}
+.range-lane.has-range .range-lane-hint { display: none; }
+.range-sel {
+    display: none;
+    position: absolute;
+    top: 2px;
+    bottom: 2px;
+    min-width: 6px;
+    background: rgba(100, 181, 246, 0.28);
+    border: 1px solid #64b5f6;
+    border-radius: 4px;
+}
+.range-sel-label {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: #cfe6fb;
+    white-space: nowrap;
+    pointer-events: none;
+    text-shadow: 0 1px 2px #000;
+}
+.range-handle {
+    position: absolute;
+    top: -2px;
+    bottom: -2px;
+    width: 8px;
+    background: #64b5f6;
+    border-radius: 3px;
+    cursor: ew-resize;
+}
+.range-handle[data-handle="in"] { left: -4px; }
+.range-handle[data-handle="out"] { right: -4px; }
+.range-lane.dragging { cursor: ew-resize; }
+
+.range-controls {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin: 12px 0 0;
+    font-size: 0.82rem;
+    color: #9e9e9e;
+}
+.range-title { font-weight: 600; margin-right: 4px; }
+.range-controls.active .range-title { color: #64b5f6; }
+.tc-input {
+    width: 72px;
+    padding: 4px 8px;
+    background: #1a1a1a;
+    border: 1px solid #3a3a3a;
+    border-radius: 6px;
+    color: #e0e0e0;
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    font-size: 0.82rem;
+    text-align: center;
+}
+.tc-input:focus { outline: none; border-color: #64b5f6; }
+.range-controls.active .tc-input { border-color: #3d6a8f; }
+.range-dash { color: #555; }
+.range-hint { color: #555; font-size: 0.75rem; margin-left: 4px; }
+
+/* ── Compact comment form ────────────────────────────────────────────────── */
+
+.annotation-form { display: flex; flex-direction: column; gap: 10px; }
+.annotation-form > textarea {
+    width: 100%;
+    padding: 10px 12px;
+    border: 2px solid #3a3a3a;
+    background: #1a1a1a;
+    color: #e0e0e0;
+    border-radius: 8px;
+    font-size: 0.95rem;
+    font-family: inherit;
+    resize: vertical;
+    min-height: 64px;
+}
+.annotation-form > textarea:focus { outline: none; border-color: #64b5f6; }
+.annotation-form .tag-selector { margin: 0; }
+.range-controls { margin: 0; }
+
+.form-footer {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px 14px;
+    font-size: 0.82rem;
+}
+.author-field { display: inline-flex; align-items: center; gap: 6px; color: #777; }
+.author-field input {
+    width: 150px;
+    padding: 5px 9px;
+    background: #1a1a1a;
+    border: 1px solid #3a3a3a;
+    border-radius: 6px;
+    color: #64b5f6;
+    font-weight: 600;
+    font-size: 0.85rem;
+}
+.author-field input:focus { outline: none; border-color: #64b5f6; }
+.form-footer #addAnnotation {
+    width: auto;
+    margin-left: auto;
+    padding: 8px 22px;
+    white-space: nowrap;
+}
+#addAnnotation:disabled { opacity: 0.6; cursor: default; }
+.shortcuts-hint { margin: 0; font-size: 0.72rem; line-height: 1.9; }
+
+.range-lane-hint { color: #6f6f6f; }
+
+/* Keep the comment list in view while the left column scrolls */
+@media (min-width: 1101px) {
+    .comments-section { position: sticky; top: 16px; align-self: start; }
+    .annotations-list { max-height: calc(100vh - 32px); }
+}
+
+@media (max-width: 600px) {
+    .form-footer #addAnnotation { width: 100%; margin-left: 0; }
+    .author-field input { width: 120px; }
+}
