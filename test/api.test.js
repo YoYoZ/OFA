@@ -57,7 +57,7 @@ test('startup: generated password printed, healthz, legacy data migrated', async
   const r = await req('GET', '/api/projects/legacy-1');
   assert.equal(r.status, 200);
   assert.equal(r.data.annotations[0].status, 0);
-  assert.deepEqual(r.data.permissions, { review: true, moderate: false, admin: false }, 'legacy projects stay open for review');
+  assert.deepEqual(r.data.permissions, { review: true, moderate: false }, 'legacy projects stay open for review');
   assert.equal(r.data.project.last_activity_at, '2020-01-02 00:00:00', 'activity = latest comment');
 });
 
@@ -69,10 +69,10 @@ test('project creation returns reviewer and editor links; URLs are validated', a
   assert.equal(r.data.project.youtube_url, 'https://www.youtube.com/watch?v=dQw4w9WgXcQ');
   assert.equal(r.data.project.tags_config, '["color","audio","pacing"]');
   assert.equal(r.data.project.editor_token, undefined, 'reviewers never see the editor token');
-  assert.deepEqual(r.data.permissions, { review: false, moderate: false, admin: false });
+  assert.deepEqual(r.data.permissions, { review: false, moderate: false });
 
   const asEditor = await req('GET', `/api/projects/${p.id}`, undefined, { 'X-Editor-Key': p.key });
-  assert.deepEqual(asEditor.data.permissions, { review: true, moderate: true, admin: false });
+  assert.deepEqual(asEditor.data.permissions, { review: true, moderate: true });
   assert.equal(asEditor.data.project.editor_token, p.key);
 
   for (const bad of ['javascript:alert(1)', 'https://evil.com/watch?v=dQw4w9WgXcQ', { a: 1 }]) {
@@ -129,9 +129,11 @@ test('roles: reviewers cannot change status; editors can, with attribution', asy
   assert.equal((await req('PATCH', `/api/annotations/${a.id}/status`, { status: '1' }, { 'X-Editor-Key': p.key })).status, 400);
   r = await req('PATCH', `/api/annotations/${a.id}/status`, { status: 0 }, { 'X-Editor-Key': p.key });
   assert.equal(r.data.status_by, null, 'resetting clears attribution');
-  // Admin session acts as editor everywhere
+  // An admin login does not turn a reviewer link into an editor link
   r = await req('PATCH', `/api/annotations/${a.id}/status`, { status: 1 }, { Cookie: adminCookie });
-  assert.equal(r.status, 200);
+  assert.equal(r.status, 403);
+  r = await req('DELETE', `/api/annotations/${a.id}`, {}, { Cookie: adminCookie });
+  assert.equal(r.status, 403);
 });
 
 test('delete: author token, editor moderation, crash-safe token handling', async () => {

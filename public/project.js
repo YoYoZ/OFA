@@ -116,7 +116,7 @@ function frameStep() {
 // ── Init ──────────────────────────────────────────────────────────────────────
 
 document.addEventListener('DOMContentLoaded', () => {
-  EditorKeys.captureFromHash(projectId);
+  EditorKeys.fromUrl(projectId);
 
   const authorInput = $('authorName');
   authorInput.value = lsGet('author_name_v2', null) ?? (localStorage.getItem('author_name') || '');
@@ -186,9 +186,10 @@ function applyProjectData(data) {
   perms = data.permissions || perms;
   tagsConfig = parseTags(project.tags_config);
   // The editor link was revoked by the admin — forget the dead key
-  if (EditorKeys.get(projectId) && !perms.review) {
+  if (EditorKeys.current[projectId] && !perms.moderate) {
     EditorKeys.set(projectId, null);
-    showToast('Your editor link is no longer valid — you are a reviewer now', 'error');
+    delete EditorKeys.current[projectId];
+    showToast('This editor link is no longer valid — you can only comment', 'error');
   }
   renderHeader(data.retention);
   renderTagSelector();
@@ -203,7 +204,7 @@ function renderHeader(retention) {
   $('projectDescription').textContent = project.description || '';
 
   const badge = $('roleBadge');
-  if (perms.moderate) { badge.textContent = perms.admin ? 'Admin' : 'Editor'; badge.className = 'role-badge editor'; badge.style.display = ''; }
+  if (perms.moderate) { badge.textContent = 'Editor'; badge.className = 'role-badge editor'; badge.style.display = ''; }
   else if (!perms.review) { badge.textContent = 'Reviewer'; badge.className = 'role-badge'; badge.style.display = ''; }
   else badge.style.display = 'none';
   $('settingsBtn').style.display = perms.moderate ? '' : 'none';
@@ -239,6 +240,7 @@ async function showRestorePanel() {
       e.target.disabled = true;
       try {
         const result = await Backup.restore(projectId);
+        history.replaceState(null, '', `${window.location.pathname}#key=${result.editor_token}`);
         showToast(`Restored ${result.restored} comments`, 'success');
         panel.style.display = 'none';
         $('loading').style.display = 'block';

@@ -116,19 +116,25 @@ async function copyText(text) {
   }
 }
 
-// ── Identity: editor keys and comment edit tokens (kept per browser) ────────
+// ── Identity: editor keys and comment edit tokens ───────────────────────────
+// The link decides the role: /project/ID#key=TOKEN is the editor, /project/ID is a reviewer —
+// in any browser. Keys seen in links are also remembered (for backups and "My projects"),
+// but a remembered key never upgrades a reviewer link.
 
 const EditorKeys = {
+  current: {},   // keys taken from the address bar of this page
   all() { return lsGet('editor_keys', {}); },
   get(projectId) { return this.all()[projectId] || null; },
   set(projectId, key) { const all = this.all(); if (key) all[projectId] = key; else delete all[projectId]; lsSet('editor_keys', all); },
-  // Editor links look like /project/ID#key=TOKEN — store the key and strip it from the address bar
-  captureFromHash(projectId) {
+  fromUrl(projectId) {
     const m = /(?:^#|&)key=([0-9a-f-]{36})/i.exec(window.location.hash);
     if (!m) return null;
+    this.current[projectId] = m[1];
     this.set(projectId, m[1]);
-    history.replaceState(null, '', window.location.pathname + window.location.search);
     return m[1];
+  },
+  editorUrl(projectId, key) {
+    return `${window.location.origin}/project/${encodeURIComponent(projectId)}#key=${key}`;
   }
 };
 
@@ -143,7 +149,7 @@ const EditTokens = {
 async function api(method, url, body, { projectId, headers = {} } = {}) {
   const h = { ...headers };
   if (body !== undefined && !(body instanceof Blob)) h['Content-Type'] = 'application/json';
-  const key = projectId && EditorKeys.get(projectId);
+  const key = projectId && EditorKeys.current[projectId];
   if (key) h['X-Editor-Key'] = key;
   const res = await fetch(url, {
     method, headers: h, credentials: 'same-origin',
@@ -311,6 +317,7 @@ const Backup = {
       annotations
     });
     EditorKeys.set(id, result.editor_token);
+    EditorKeys.current[id] = result.editor_token;
     await this.put({ ...entry, editorKey: result.editor_token });
     return result;
   }

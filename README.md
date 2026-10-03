@@ -97,7 +97,7 @@ Access at: **http://localhost:3000**
    - **Reviewer link** — send it to everyone who should comment
    - **Editor link** — keep it for yourself: it can accept/reject comments, delete any comment and change project settings
 
-The editor link carries a key after `#key=`. When you open it, the key is stored in your browser and removed from the address bar, so copying the URL afterwards gives the reviewer link. You can always get both links again from **🔗 Share**.
+The editor link carries a key after `#key=`. **The link alone decides the role**: the same browser opening the plain link is a reviewer, the `#key=` link is the editor — regardless of what was opened before or whether you are logged in as admin. Bookmark the editor link; both links are always available from **🔗 Share** (editor only) and the admin panel.
 
 Projects created before roles existed stay open: anyone can change statuses, nobody can moderate. The admin can lock such a project by creating an editor link for it.
 
@@ -174,7 +174,7 @@ Open `/admin` and log in with the password from `.env` (or the generated one fro
 - **Admin password** — change it in the panel (stored as a scrypt hash; other sessions are logged out). Forgot it? `npm run reset-admin-password` (Docker: `docker compose exec -u node ofa npm run reset-admin-password`) brings back `ADMIN_PASSWORD` / the generated password.
 - **Backup** — download a consistent copy of the database
 
-The admin is treated as the editor of every project. Sessions last 24 hours and survive restarts.
+An admin login gives no extra rights inside projects — to moderate one, open its editor link (🔑 in the project list). Sessions last 24 hours and survive restarts.
 
 ---
 
@@ -212,7 +212,7 @@ OFA/
 
 ## 🔌 API Reference
 
-JSON everywhere unless noted. Editor-only calls need the header `X-Editor-Key: <editor token>` (or an admin session). Your own comments are identified by the `edit_token` returned on creation (body field `edit_token` or header `X-Edit-Token`).
+JSON everywhere unless noted. Editor-only calls need the header `X-Editor-Key: <editor token>`. Your own comments are identified by the `edit_token` returned on creation (body field `edit_token` or header `X-Edit-Token`).
 
 ### Projects
 

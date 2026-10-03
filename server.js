@@ -405,13 +405,14 @@ function cleanAnnotationTags(tags, project) {
   return clean.length ? JSON.stringify(clean) : null;
 }
 
-// What the current request may do on a project
+// What the current request may do on a project. Only the link decides: an admin login does not
+// grant project rights, so a reviewer link behaves the same in every browser.
+// (Admins moderate a project by opening its editor link from the admin panel.)
 function permissionsFor(req, project) {
-  if (req.session && req.session.isAdmin) return { review: true, moderate: true, admin: true };
   // Projects created before roles existed stay open for review, but nobody can moderate them
-  if (!project.editor_token) return { review: true, moderate: false, admin: false };
+  if (!project.editor_token) return { review: true, moderate: false };
   const editor = safeCompare(req.get('X-Editor-Key'), project.editor_token);
-  return { review: editor, moderate: editor, admin: false };
+  return { review: editor, moderate: editor };
 }
 
 function publicProject(project, perms) {

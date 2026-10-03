@@ -99,7 +99,7 @@
                 const base = `${window.location.origin}/project/${data.project_id}`;
                 $('shareUrl').value = base;
                 $('editorUrl').value = `${base}#key=${data.editor_token}`;
-                $('openProject').href = `/project/${data.project_id}`;
+                $('openProject').href = `/project/${data.project_id}#key=${data.editor_token}`;
                 $('result').style.display = 'block';
                 ['youtubeUrl', 'projectTitle', 'projectDescription', 'projectTags'].forEach(id => { $(id).value = ''; });
                 renderMyProjects();
@@ -127,7 +127,7 @@
                     <div class="project-row" data-row="${id}">
                         ${videoId ? `<img class="sb-thumb" src="https://img.youtube.com/vi/${videoId}/default.jpg" alt="" style="width:80px;height:45px;object-fit:cover">` : ''}
                         <div class="row-main">
-                            <a class="row-title" href="/project/${encodeURIComponent(e.id)}">${escapeHtml(e.project.title || 'Untitled project')}</a>
+                            <a class="row-title" href="/project/${encodeURIComponent(e.id)}${e.editorKey ? `#key=${escapeHtml(e.editorKey)}` : ''}">${escapeHtml(e.project.title || 'Untitled project')}</a>
                             ${e.editorKey ? '<span class="role-badge editor" style="margin-left:8px">Editor</span>' : ''}
                             <div class="row-meta">
                                 ${roots.length} comments · ${open} open · ${e.mine || 0} yours · opened ${escapeHtml(timeAgo(e.lastOpened))}
