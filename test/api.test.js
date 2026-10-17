@@ -195,7 +195,7 @@ test('exports in all formats with start offset and status filter', async () => {
   assert.equal(r.status, 200);
   assert.match(r.data, /01:00:05:00 01:00:05:01/);
   assert.match(r.data, /ResolveColorGreen \|M:Alice: Too warm #audio \|D:1/);
-  assert.match(r.headers.get('content-disposition'), /filename\*=UTF-8''%D0%A0%D0%BE%D0%BB%D0%B8%D0%BA\.edl/);
+  assert.match(r.headers.get('content-disposition'), /filename\*=UTF-8''%D0%A0%D0%BE%D0%BB%D0%B8%D0%BA-v1\.edl/);
 
   r = await req('GET', `/api/projects/${p.id}/export/srt`);
   assert.match(r.data, /00:01:05,500 --> 00:01:10,000/);
@@ -399,5 +399,158 @@ test('caching: versioned assets are immutable, pages and API are never cached', 
     const r = await fetch(srv.base + p);
     assert.equal(r.status, 200, p);
     assert.doesNotMatch(await r.text(), /__ASSET_VERSION__/, p);
+  }
+});
+
+// ── Versions ─────────────────────────────────────────────────────────────────
+
+const VIDEO2 = 'https://youtu.be/9bZkp7q19f0';
+
+test('admin re-login (earlier tests reset the password and sessions)', async () => {
+  const r = await req('POST', '/api/admin/login', { password: adminPassword });
+  assert.equal(r.status, 200);
+  adminCookie = r.headers.get('set-cookie').split(';')[0];
+});
+
+test('versions: legacy projects become version 1, new projects start at version 1', async () => {
+  let r = await req('GET', '/api/projects/legacy-1');
+  assert.equal(r.data.versions.length, 1);
+  assert.equal(r.data.versions[0].number, 1);
+  const p = await createProject();
+  r = await req('GET', `/api/projects/${p.id}`);
+  assert.equal(r.data.versions.length, 1);
+  const a = await addComment(p.id);
+  assert.equal(a.version_id, r.data.versions[0].id, 'comments go to the latest version by default');
+});
+
+test('versions: new cut carries open comments with replies and keeps authors able to edit', async () => {
+  const p = await createProject();
+  const v1 = (await req('GET', `/api/projects/${p.id}`)).data.versions[0];
+  const pending = await addComment(p.id, { text: 'fix colour', timecode: 5 });
+  await addComment(p.id, { parent_id: pending.id, text: 'on it', author: 'Ed' });
+  const inWork = await addComment(p.id, { text: 'music', timecode: 9 });
+  const done = await addComment(p.id, { text: 'typo', timecode: 12 });
+  await req('PATCH', `/api/annotations/${inWork.id}/status`, { status: 3, by: 'Ed' }, { 'X-Editor-Key': p.key });
+  await req('PATCH', `/api/annotations/${done.id}/status`, { status: 1 }, { 'X-Editor-Key': p.key });
+
+  assert.equal((await req('POST', `/api/projects/${p.id}/versions`, { youtube_url: VIDEO2 })).status, 403, 'reviewers cannot add versions');
+  assert.equal((await req('POST', `/api/projects/${p.id}/versions`, { youtube_url: 'nope' }, { 'X-Editor-Key': p.key })).status, 400);
+
+  let r = await req('POST', `/api/projects/${p.id}/versions`, { youtube_url: VIDEO2, label: 'Colour pass', notes: 'Graded, new music' }, { 'X-Editor-Key': p.key });
+  assert.equal(r.status, 201, JSON.stringify(r.data));
+  const v2 = r.data.version;
+  assert.equal(v2.number, 2);
+  assert.equal(v2.label, 'Colour pass');
+  assert.equal(r.data.carried, 2, 'pending + in progress, not accepted');
+
+  const project = (await req('GET', `/api/projects/${p.id}`)).data;
+  assert.equal(project.project.youtube_url, 'https://www.youtube.com/watch?v=9bZkp7q19f0', 'project points at the latest cut');
+  const inV2 = project.annotations.filter(a => a.version_id === v2.id);
+  const inV1 = project.annotations.filter(a => a.version_id === v1.id);
+  assert.equal(inV1.length, 4, 'old version untouched');
+  assert.deepEqual(inV2.filter(a => !a.parent_id).map(a => a.text).sort(), ['fix colour', 'music']);
+  const carriedRoot = inV2.find(a => a.carried_from === pending.id);
+  assert.ok(carriedRoot);
+  assert.equal(inV2.find(a => a.parent_id === carriedRoot.id).text, 'on it', 'replies come along');
+  assert.equal(inV2.find(a => a.carried_from === inWork.id).status, 3, 'status kept');
+
+  // The original author still owns the copy
+  r = await req('PATCH', `/api/annotations/${carriedRoot.id}`, { text: 'still too warm', edit_token: pending.edit_token });
+  assert.equal(r.status, 200);
+
+  // New comments land in the latest version unless another one is asked for
+  assert.equal((await addComment(p.id, { text: 'new' })).version_id, v2.id);
+  assert.equal((await addComment(p.id, { text: 'late note on v1', version_id: v1.id })).version_id, v1.id);
+  assert.equal((await req('POST', `/api/projects/${p.id}/annotations`, { author: 'A', text: 'x', timecode: 1, version_id: 'bogus' })).status, 404);
+  // Replies follow their parent's version
+  assert.equal((await addComment(p.id, { parent_id: pending.id, text: 'v1 reply' })).version_id, v1.id);
+
+  // Exports per version
+  r = await req('GET', `/api/projects/${p.id}/export/srt`);
+  assert.match(r.data, /still too warm/);
+  assert.doesNotMatch(r.data, /typo/);
+  r = await req('GET', `/api/projects/${p.id}/export/srt?version=${v1.id}`);
+  assert.match(r.data, /typo/);
+  assert.match(r.headers.get('content-disposition'), /-v1\.srt/);
+
+  // No carry-over
+  r = await req('POST', `/api/projects/${p.id}/versions`, { youtube_url: VIDEO, carry_over: false }, { 'X-Editor-Key': p.key });
+  assert.equal(r.data.version.number, 3);
+  assert.equal(r.data.carried, 0);
+});
+
+test('versions: rename and delete, never below one version', async () => {
+  const p = await createProject();
+  const v1 = (await req('GET', `/api/projects/${p.id}`)).data.versions[0];
+  assert.equal((await req('DELETE', `/api/projects/${p.id}/versions/${v1.id}`, undefined, { 'X-Editor-Key': p.key })).status, 400);
+  const v2 = (await req('POST', `/api/projects/${p.id}/versions`, { youtube_url: VIDEO2 }, { 'X-Editor-Key': p.key })).data.version;
+  const c = await addComment(p.id, { text: 'on v2' });
+  let r = await req('PATCH', `/api/projects/${p.id}/versions/${v2.id}`, { label: 'Final', notes: 'Locked' }, { 'X-Editor-Key': p.key });
+  assert.equal(r.data.label, 'Final');
+  assert.equal((await req('PATCH', `/api/projects/${p.id}/versions/${v2.id}`, { label: 'x' })).status, 403);
+
+  r = await req('DELETE', `/api/projects/${p.id}/versions/${v2.id}`, undefined, { 'X-Editor-Key': p.key });
+  assert.equal(r.status, 200);
+  const after = (await req('GET', `/api/projects/${p.id}`)).data;
+  assert.equal(after.versions.length, 1);
+  assert.equal(after.project.youtube_url, 'https://www.youtube.com/watch?v=dQw4w9WgXcQ', 'falls back to the previous cut');
+  assert.ok(!after.annotations.some(a => a.id === c.id), 'comments of the deleted version are gone');
+});
+
+test('versions: restore from a backup keeps versions; old backups get version 1', async () => {
+  const p = await createProject();
+  await addComment(p.id, { text: 'v1 note' });
+  await req('POST', `/api/projects/${p.id}/versions`, { youtube_url: VIDEO2 }, { 'X-Editor-Key': p.key });
+  await addComment(p.id, { text: 'v2 note' });
+  const snap = (await req('GET', `/api/projects/${p.id}`, undefined, { 'X-Editor-Key': p.key })).data;
+  await req('DELETE', `/api/admin/projects/${p.id}`, undefined, { Cookie: adminCookie });
+
+  let r = await req('POST', '/api/projects/restore', { project: snap.project, versions: snap.versions, annotations: snap.annotations });
+  assert.equal(r.status, 201, JSON.stringify(r.data));
+  assert.equal(r.data.versions, 2);
+  const restored = (await req('GET', `/api/projects/${p.id}`)).data;
+  assert.deepEqual(restored.versions.map(v => v.number), [1, 2]);
+  const v2 = restored.versions[1];
+  assert.equal(restored.annotations.find(a => a.text === 'v2 note').version_id, v2.id);
+  assert.equal(restored.project.youtube_url, 'https://www.youtube.com/watch?v=9bZkp7q19f0');
+
+  // Backup from before versions existed
+  const old = await createProject();
+  await addComment(old.id, { text: 'legacy note' });
+  const oldSnap = (await req('GET', `/api/projects/${old.id}`)).data;
+  await req('DELETE', `/api/admin/projects/${old.id}`, undefined, { Cookie: adminCookie });
+  r = await req('POST', '/api/projects/restore', {
+    project: oldSnap.project,
+    annotations: oldSnap.annotations.map(({ version_id: _drop, ...a }) => a)
+  });
+  assert.equal(r.data.versions, 1);
+  const back = (await req('GET', `/api/projects/${old.id}`)).data;
+  assert.equal(back.annotations[0].version_id, back.versions[0].id);
+});
+
+test('admin single sign-on via a trusted proxy header (opt-in)', async () => {
+  // Default server: the header means nothing
+  assert.equal((await req('GET', '/api/admin/projects', undefined, { 'X-Gate-User': 'yoyoz' })).status, 401);
+
+  const sso = await startServer({ env: { ADMIN_AUTH_HEADER: 'X-Gate-User', ADMIN_AUTH_USERS: 'yoyoz,kate', ADMIN_LOGOUT_URL: '/_gate/logout' } });
+  try {
+    assert.match(sso.output(), /Admin single sign-on: trusting the X-Gate-User header for yoyoz, kate/);
+    let r = await sso.request('GET', '/api/admin/check', undefined, { 'X-Gate-User': 'yoyoz' });
+    assert.deepEqual(r.data, { authenticated: true, via: 'proxy', user: 'yoyoz', logout_url: '/_gate/logout' });
+    assert.equal((await sso.request('GET', '/api/admin/projects', undefined, { 'X-Gate-User': 'kate' })).status, 200);
+    assert.equal((await sso.request('GET', '/api/admin/projects', undefined, { 'X-Gate-User': 'mallory' })).status, 401, 'allowlist enforced');
+    assert.equal((await sso.request('GET', '/api/admin/projects')).status, 401);
+    r = await sso.request('GET', '/api/admin/check');
+    assert.equal(r.data.authenticated, false);
+    // Proxy-authenticated admins can set the fallback password without knowing the old one
+    r = await sso.request('POST', '/api/admin/password', { next: 'fallbackpass1' }, { 'X-Gate-User': 'yoyoz' });
+    assert.equal(r.status, 200);
+    assert.equal((await sso.request('POST', '/api/admin/login', { password: 'fallbackpass1' })).status, 200, 'own login still works');
+    // Project rights still come from links only
+    const p = await sso.request('POST', '/api/projects', { youtube_url: VIDEO });
+    r = await sso.request('GET', `/api/projects/${p.data.project_id}`, undefined, { 'X-Gate-User': 'yoyoz' });
+    assert.equal(r.data.permissions.moderate, false);
+  } finally {
+    await sso.stop();
   }
 });

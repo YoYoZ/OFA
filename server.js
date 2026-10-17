@@ -25,7 +25,16 @@ const MAX_TIMECODE = 48 * 3600;
 const STATUSES = [0, 1, 2, 3]; // pending, accepted, rejected, in progress
 const SAFE_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const ANNOTATION_FIELDS = 'id, project_id, parent_id, author, text, timecode, timecode_end, status, status_by, status_at, tags, has_screenshot, edited_at, created_at';
+const ANNOTATION_FIELDS = 'id, project_id, version_id, carried_from, parent_id, author, text, timecode, timecode_end, status, status_by, status_at, tags, has_screenshot, edited_at, created_at';
+const VERSION_FIELDS = 'id, project_id, number, label, notes, youtube_url, created_at';
+
+// Optional single sign-on for the admin panel: a reverse proxy (auth-gate, Authelia,
+// oauth2-proxy, …) authenticates the user and passes the name in this header.
+// Off unless set. Only enable it when clients cannot reach OFA except through that
+// proxy, and the proxy overwrites/strips the header on every request.
+const ADMIN_AUTH_HEADER = (process.env.ADMIN_AUTH_HEADER || '').trim();
+const ADMIN_AUTH_USERS = (process.env.ADMIN_AUTH_USERS || '').split(',').map(u => u.trim()).filter(Boolean);
+const ADMIN_LOGOUT_URL = (process.env.ADMIN_LOGOUT_URL || '').trim();
 
 fs.mkdirSync(SCREENSHOT_DIR, { recursive: true });
 
@@ -154,6 +163,17 @@ async function initDatabase() {
     expires INTEGER NOT NULL
   )`);
 
+  await dbRun(`CREATE TABLE IF NOT EXISTS versions (
+    id          TEXT PRIMARY KEY,
+    project_id  TEXT NOT NULL,
+    number      INTEGER NOT NULL,
+    label       TEXT,
+    notes       TEXT,
+    youtube_url TEXT NOT NULL,
+    created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (project_id, number)
+  )`);
+
   await dbRun(`CREATE TABLE IF NOT EXISTS settings (
     key   TEXT PRIMARY KEY,
     value TEXT
@@ -176,6 +196,16 @@ async function initDatabase() {
   await addColumn('ALTER TABLE annotations ADD COLUMN status_at DATETIME');
   await addColumn('ALTER TABLE annotations ADD COLUMN has_screenshot INTEGER DEFAULT 0');
   await addColumn('ALTER TABLE annotations ADD COLUMN edited_at DATETIME');
+  await addColumn('ALTER TABLE annotations ADD COLUMN version_id TEXT');
+  await addColumn('ALTER TABLE annotations ADD COLUMN carried_from TEXT');
+
+  // Projects from before versions existed become "version 1" with all their comments
+  await dbRun(`INSERT INTO versions (id, project_id, number, youtube_url, created_at)
+    SELECT lower(hex(randomblob(16))), p.id, 1, p.youtube_url, p.created_at FROM projects p
+    WHERE NOT EXISTS (SELECT 1 FROM versions v WHERE v.project_id = p.id)`);
+  await dbRun(`UPDATE annotations SET version_id = (
+      SELECT v.id FROM versions v WHERE v.project_id = annotations.project_id ORDER BY v.number LIMIT 1)
+    WHERE version_id IS NULL`);
 
   await dbRun(`UPDATE projects SET last_activity_at = COALESCE(
       (SELECT MAX(created_at) FROM annotations WHERE annotations.project_id = projects.id), created_at)
@@ -183,6 +213,8 @@ async function initDatabase() {
 
   await dbRun('CREATE INDEX IF NOT EXISTS idx_annotations_project ON annotations (project_id)');
   await dbRun('CREATE INDEX IF NOT EXISTS idx_annotations_parent ON annotations (parent_id)');
+  await dbRun('CREATE INDEX IF NOT EXISTS idx_annotations_version ON annotations (version_id)');
+  await dbRun('CREATE INDEX IF NOT EXISTS idx_versions_project ON versions (project_id, number)');
   await dbRun('CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions (expires)');
   await dbRun('CREATE INDEX IF NOT EXISTS idx_projects_activity ON projects (last_activity_at)');
   console.log('Database initialized');
@@ -437,6 +469,31 @@ async function getProjectOr404(id) {
   return project;
 }
 
+function getVersions(projectId) {
+  return dbAll(`SELECT ${VERSION_FIELDS} FROM versions WHERE project_id = ? ORDER BY number ASC`, [projectId]);
+}
+
+// The requested version of a project, or its latest one
+async function resolveVersion(project, versionId) {
+  if (versionId != null && versionId !== '') {
+    if (typeof versionId !== 'string') throw new HttpError(400, 'Invalid version');
+    const v = await dbGet(`SELECT ${VERSION_FIELDS} FROM versions WHERE id = ? AND project_id = ?`, [versionId, project.id]);
+    if (!v) throw new HttpError(404, 'Version not found');
+    return v;
+  }
+  const latest = await dbGet(`SELECT ${VERSION_FIELDS} FROM versions WHERE project_id = ? ORDER BY number DESC LIMIT 1`, [project.id]);
+  if (!latest) throw new HttpError(500, 'Project has no versions');
+  return latest;
+}
+
+function canonicalYouTubeUrl(input) {
+  if (typeof input !== 'string' || input.length > 2048) throw new HttpError(400, 'YouTube URL is required');
+  const videoId = parseYouTubeId(input);
+  if (!videoId) throw new HttpError(400, 'Invalid YouTube URL');
+  // Canonical URL keeps rendering safe and makes every link format work in the player
+  return `https://www.youtube.com/watch?v=${videoId}`;
+}
+
 async function getAnnotationOr404(id) {
   const annotation = await dbGet('SELECT * FROM annotations WHERE id = ?', [id]);
   if (!annotation) throw new HttpError(404, 'Annotation not found');
@@ -476,6 +533,7 @@ async function deleteProjects(ids) {
   for (const id of ids) {
     const annotations = await dbAll('SELECT id FROM annotations WHERE project_id = ?', [id]);
     await dbRun('DELETE FROM annotations WHERE project_id = ?', [id]);
+    await dbRun('DELETE FROM versions WHERE project_id = ?', [id]);
     const result = await dbRun('DELETE FROM projects WHERE id = ?', [id]);
     removeScreenshots(annotations.map(a => a.id));
     if (result.changes) {
@@ -520,8 +578,21 @@ function adminRateLimit(req, res, next) {
   next();
 }
 
+// Name of the user signed in at the reverse proxy, when ADMIN_AUTH_HEADER is enabled
+function proxyAdminUser(req) {
+  if (!ADMIN_AUTH_HEADER) return null;
+  const user = String(req.get(ADMIN_AUTH_HEADER) || '').trim().slice(0, 100);
+  if (!user) return null;
+  if (ADMIN_AUTH_USERS.length && !ADMIN_AUTH_USERS.includes(user)) return null;
+  return user;
+}
+
+function isAdmin(req) {
+  return !!(req.session && req.session.isAdmin) || !!proxyAdminUser(req);
+}
+
 function checkAdminAuth(req, res, next) {
-  if (req.session && req.session.isAdmin) return next();
+  if (isAdmin(req)) return next();
   res.status(401).json({ error: 'Unauthorized' });
 }
 
@@ -558,12 +629,21 @@ app.post('/api/admin/logout', (req, res) => {
 });
 
 app.get('/api/admin/check', (req, res) => {
-  res.json({ authenticated: !!(req.session && req.session.isAdmin) });
+  const viaSession = !!(req.session && req.session.isAdmin);
+  const proxyUser = viaSession ? null : proxyAdminUser(req);
+  res.json({
+    authenticated: viaSession || !!proxyUser,
+    via: viaSession ? 'password' : proxyUser ? 'proxy' : null,
+    user: proxyUser,
+    logout_url: proxyUser ? ADMIN_LOGOUT_URL || null : null
+  });
 });
 
 app.post('/api/admin/password', checkAdminAuth, ah(async (req, res) => {
   const { current, next } = req.body;
-  if (typeof current !== 'string' || !(await checkAdminPassword(current))) {
+  // Signed in at the proxy: the proxy already vouched for the user, no current password needed
+  const viaProxy = !(req.session && req.session.isAdmin);
+  if (!viaProxy && (typeof current !== 'string' || !(await checkAdminPassword(current)))) {
     throw new HttpError(403, 'Current password is incorrect');
   }
   if (typeof next !== 'string' || next.length < 8 || next.length > 200) {
@@ -578,7 +658,10 @@ app.post('/api/admin/password', checkAdminAuth, ah(async (req, res) => {
 app.get('/api/admin/projects', checkAdminAuth, ah(async (req, res) => {
   const projects = await dbAll(`
     SELECT p.*, COUNT(a.id) AS annotations_count,
-           SUM(CASE WHEN a.parent_id IS NULL AND COALESCE(a.status, 0) IN (0, 3) THEN 1 ELSE 0 END) AS open_count
+           SUM(CASE WHEN a.parent_id IS NULL AND COALESCE(a.status, 0) IN (0, 3)
+                     AND a.version_id = (SELECT v.id FROM versions v WHERE v.project_id = p.id ORDER BY v.number DESC LIMIT 1)
+                    THEN 1 ELSE 0 END) AS open_count,
+           (SELECT MAX(number) FROM versions v WHERE v.project_id = p.id) AS versions_count
     FROM projects p
     LEFT JOIN annotations a ON p.id = a.project_id
     GROUP BY p.id ORDER BY p.last_activity_at DESC
@@ -594,6 +677,7 @@ app.get('/api/admin/projects', checkAdminAuth, ah(async (req, res) => {
       ...publicProject(p, { moderate: true }),
       annotations_count: p.annotations_count,
       open_count: p.open_count || 0,
+      versions_count: p.versions_count || 1,
       share_url: `${base}/project/${p.id}`,
       editor_url: p.editor_token ? `${base}/project/${p.id}#key=${p.editor_token}` : null
     })),
@@ -710,17 +794,15 @@ app.post('/api/projects', ah(async (req, res) => {
     throw new HttpError(400, 'Invalid tags');
   }
 
-  const videoId = parseYouTubeId(youtube_url);
-  if (!videoId) throw new HttpError(400, 'Invalid YouTube URL');
-
+  const url = canonicalYouTubeUrl(youtube_url);
   const projectId = crypto.randomUUID();
   const editorToken = crypto.randomUUID();
-  await dbRun(
-    `INSERT INTO projects (id, youtube_url, title, description, tags_config, editor_token, last_activity_at)
-     VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
-    // Canonical URL keeps rendering safe and makes every link format work in the player
-    [projectId, `https://www.youtube.com/watch?v=${videoId}`, title, description, normalizeTagsConfig(req.body.tags_config), editorToken]
-  );
+  await dbBatch([
+    [`INSERT INTO projects (id, youtube_url, title, description, tags_config, editor_token, last_activity_at)
+      VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+     [projectId, url, title, description, normalizeTagsConfig(req.body.tags_config), editorToken]],
+    ['INSERT INTO versions (id, project_id, number, youtube_url) VALUES (?, ?, 1, ?)', [crypto.randomUUID(), projectId, url]]
+  ]);
 
   const base = baseUrl(req);
   res.status(201).json({
@@ -740,6 +822,7 @@ app.get('/api/projects/:id', ah(async (req, res) => {
   );
   res.json({
     project: publicProject(project, perms),
+    versions: await getVersions(project.id),
     annotations,
     permissions: perms,
     retention: { days: settings.retention_days, warn_days: settings.retention_warn_days }
@@ -771,10 +854,101 @@ app.patch('/api/projects/:id', ah(async (req, res) => {
 
 app.get('/api/projects/:id/storyboard', ah(async (req, res) => {
   const project = await getProjectOr404(req.params.id);
-  const videoId = parseYouTubeId(project.youtube_url);
+  const version = await resolveVersion(project, req.query.version);
+  const videoId = parseYouTubeId(version.youtube_url);
   if (!videoId) return res.json({ duration: 0, levels: [] });
   res.setHeader('Cache-Control', 'private, max-age=3600');
   res.json(await fetchStoryboard(videoId));
+}));
+
+// ── Versions (cuts) ──────────────────────────────────────────────────────────
+
+// New cut: new YouTube link; open comments of the previous cut can be carried over
+app.post('/api/projects/:id/versions', ah(async (req, res) => {
+  const project = await getProjectOr404(req.params.id);
+  if (!permissionsFor(req, project).moderate) throw new HttpError(403, 'Only the editor can add versions');
+  const url = canonicalYouTubeUrl(req.body.youtube_url);
+  const label = optionalString(req.body.label, 60, 'label');
+  const notes = optionalString(req.body.notes, 1000, 'notes');
+  const from = await resolveVersion(project, req.body.from_version_id);
+  const carryStatuses = Array.isArray(req.body.carry_statuses)
+    ? req.body.carry_statuses.filter(s => STATUSES.includes(s))
+    : [0, 3];
+  const carry = req.body.carry_over !== false && carryStatuses.length > 0;
+
+  const max = await dbGet('SELECT MAX(number) AS n FROM versions WHERE project_id = ?', [project.id]);
+  const version = { id: crypto.randomUUID(), number: (max.n || 0) + 1 };
+  const statements = [
+    ['INSERT INTO versions (id, project_id, number, label, notes, youtube_url) VALUES (?, ?, ?, ?, ?, ?)',
+     [version.id, project.id, version.number, label, notes, url]],
+    ['UPDATE projects SET youtube_url = ?, last_activity_at = CURRENT_TIMESTAMP WHERE id = ?', [url, project.id]]
+  ];
+
+  const carriedIds = [];
+  if (carry) {
+    const all = await dbAll('SELECT * FROM annotations WHERE project_id = ? AND version_id = ?', [project.id, from.id]);
+    const roots = all.filter(a => !a.parent_id && carryStatuses.includes(a.status || 0));
+    const copy = (a, newId, parentId) => [
+      `INSERT INTO annotations (id, project_id, version_id, carried_from, parent_id, author, text, timecode, timecode_end,
+                                status, status_by, status_at, tags, edit_token, edited_at, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      // The copy keeps the author's edit token, so they can still edit or delete it
+      [newId, project.id, version.id, a.id, parentId, a.author, a.text, a.timecode, a.timecode_end,
+       a.status || 0, a.status_by, a.status_at, a.tags, a.edit_token, a.edited_at, a.created_at]
+    ];
+    for (const root of roots) {
+      const rootId = crypto.randomUUID();
+      statements.push(copy(root, rootId, null));
+      carriedIds.push(rootId);
+      for (const reply of all.filter(r => r.parent_id === root.id)) {
+        const replyId = crypto.randomUUID();
+        statements.push(copy(reply, replyId, rootId));
+        carriedIds.push(replyId);
+      }
+    }
+  }
+  await dbBatch(statements);
+
+  const created = await dbGet(`SELECT ${VERSION_FIELDS} FROM versions WHERE id = ?`, [version.id]);
+  const carried = carriedIds.length
+    ? await dbAll(`SELECT ${ANNOTATION_FIELDS} FROM annotations WHERE version_id = ? ORDER BY timecode ASC, created_at ASC`, [version.id])
+    : [];
+  io.to(project.id).emit('version:created', { version: created, annotations: carried });
+  res.status(201).json({ version: created, annotations: carried, carried: carried.filter(a => !a.parent_id).length });
+}));
+
+app.patch('/api/projects/:id/versions/:versionId', ah(async (req, res) => {
+  const project = await getProjectOr404(req.params.id);
+  if (!permissionsFor(req, project).moderate) throw new HttpError(403, 'Only the editor can change versions');
+  const version = await resolveVersion(project, req.params.versionId);
+  const updates = {};
+  if (req.body.label !== undefined) updates.label = optionalString(req.body.label, 60, 'label');
+  if (req.body.notes !== undefined) updates.notes = optionalString(req.body.notes, 1000, 'notes');
+  const keys = Object.keys(updates);
+  if (keys.length) {
+    await dbRun(`UPDATE versions SET ${keys.map(k => `${k} = ?`).join(', ')} WHERE id = ?`, [...keys.map(k => updates[k]), version.id]);
+  }
+  const updated = await dbGet(`SELECT ${VERSION_FIELDS} FROM versions WHERE id = ?`, [version.id]);
+  io.to(project.id).emit('version:updated', updated);
+  res.json(updated);
+}));
+
+// Removes a version and its comments; the project always keeps at least one
+app.delete('/api/projects/:id/versions/:versionId', ah(async (req, res) => {
+  const project = await getProjectOr404(req.params.id);
+  if (!permissionsFor(req, project).moderate) throw new HttpError(403, 'Only the editor can delete versions');
+  const version = await resolveVersion(project, req.params.versionId);
+  const count = await dbGet('SELECT COUNT(*) AS n FROM versions WHERE project_id = ?', [project.id]);
+  if (count.n <= 1) throw new HttpError(400, 'A project needs at least one version');
+
+  const doomed = await dbAll('SELECT id FROM annotations WHERE version_id = ?', [version.id]);
+  await dbRun('DELETE FROM annotations WHERE version_id = ?', [version.id]);
+  await dbRun('DELETE FROM versions WHERE id = ?', [version.id]);
+  removeScreenshots(doomed.map(a => a.id));
+  const latest = await resolveVersion(project, null);
+  await dbRun('UPDATE projects SET youtube_url = ?, last_activity_at = CURRENT_TIMESTAMP WHERE id = ?', [latest.youtube_url, project.id]);
+  io.to(project.id).emit('version:deleted', { id: version.id });
+  res.json({ success: true, id: version.id });
 }));
 
 // Recreate a deleted project from a browser backup
@@ -795,6 +969,33 @@ app.post('/api/projects/restore', ah(async (req, res) => {
   const list = Array.isArray(srcAnnotations) ? srcAnnotations : [];
   if (list.length > 5000) throw new HttpError(400, 'Too many annotations (max 5000)');
 
+  // Versions from the backup; backups made before versions existed get a single version 1
+  const versions = [];
+  const seenNumbers = new Set();
+  for (const v of Array.isArray(req.body.versions) ? req.body.versions.slice(0, 200) : []) {
+    try {
+      if (!v || typeof v.id !== 'string' || !SAFE_ID_RE.test(v.id) || versions.some(x => x.id === v.id)) continue;
+      const number = Number(v.number);
+      if (!Number.isInteger(number) || number < 1 || seenNumbers.has(number)) continue;
+      if (await dbGet('SELECT id FROM versions WHERE id = ?', [v.id])) continue;
+      versions.push({
+        id: v.id, number,
+        label: optionalString(v.label, 60, 'label'),
+        notes: optionalString(v.notes, 1000, 'notes'),
+        youtube_url: canonicalYouTubeUrl(v.youtube_url),
+        created_at: toDbDate(parseDbDate(v.created_at) || new Date())
+      });
+      seenNumbers.add(number);
+    } catch { /* skip invalid entries */ }
+  }
+  if (!versions.length) {
+    versions.push({ id: crypto.randomUUID(), number: 1, label: null, notes: null,
+      youtube_url: `https://www.youtube.com/watch?v=${videoId}`, created_at: toDbDate(new Date()) });
+  }
+  versions.sort((a, b) => a.number - b.number);
+  const versionIds = new Set(versions.map(v => v.id));
+  const latestVersion = versions[versions.length - 1];
+
   const projectForTags = { tags_config: tagsConfig };
   const valid = new Map();
   // Roots first so replies can reference them
@@ -809,6 +1010,9 @@ app.post('/api/projects/restore', ah(async (req, res) => {
       valid.set(a.id, {
         id: a.id,
         parent_id: a.parent_id || null,
+        version_id: a.parent_id ? valid.get(a.parent_id).version_id
+          : versionIds.has(a.version_id) ? a.version_id : versions[0].id,
+        carried_from: typeof a.carried_from === 'string' && SAFE_ID_RE.test(a.carried_from) ? a.carried_from : null,
         author: requiredString(a.author, 100, 'author'),
         text: requiredString(a.text, 2000, 'text'),
         timecode,
@@ -826,13 +1030,19 @@ app.post('/api/projects/restore', ah(async (req, res) => {
   const statements = [[
     `INSERT INTO projects (id, youtube_url, title, description, tags_config, editor_token, last_activity_at)
      VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
-    [src.id, `https://www.youtube.com/watch?v=${videoId}`, title, description, tagsConfig, editorToken]
+    [src.id, latestVersion.youtube_url, title, description, tagsConfig, editorToken]
   ]];
+  for (const v of versions) {
+    statements.push([
+      'INSERT INTO versions (id, project_id, number, label, notes, youtube_url, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [v.id, src.id, v.number, v.label, v.notes, v.youtube_url, v.created_at]
+    ]);
+  }
   for (const a of valid.values()) {
     statements.push([
-      `INSERT INTO annotations (id, project_id, parent_id, author, text, timecode, timecode_end, status, status_by, tags, edit_token, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [a.id, src.id, a.parent_id, a.author, a.text, a.timecode, a.timecode_end, a.status, a.status_by, a.tags, a.edit_token, a.created_at]
+      `INSERT INTO annotations (id, project_id, version_id, carried_from, parent_id, author, text, timecode, timecode_end, status, status_by, tags, edit_token, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [a.id, src.id, a.version_id, a.carried_from, a.parent_id, a.author, a.text, a.timecode, a.timecode_end, a.status, a.status_by, a.tags, a.edit_token, a.created_at]
     ]);
   }
   await dbBatch(statements);
@@ -842,6 +1052,7 @@ app.post('/api/projects/restore', ah(async (req, res) => {
     project_id: src.id,
     editor_token: editorToken,
     restored: valid.size,
+    versions: versions.length,
     share_url: `${base}/project/${src.id}`,
     editor_url: `${base}/project/${src.id}#key=${editorToken}`
   });
@@ -859,10 +1070,12 @@ app.post('/api/projects/:id/annotations', ah(async (req, res) => {
 
   let parent = null;
   if (parent_id) {
-    parent = await dbGet('SELECT id, parent_id, timecode FROM annotations WHERE id = ? AND project_id = ?', [parent_id, project.id]);
+    parent = await dbGet('SELECT id, parent_id, timecode, version_id FROM annotations WHERE id = ? AND project_id = ?', [parent_id, project.id]);
     if (!parent) throw new HttpError(404, 'Parent comment not found');
     if (parent.parent_id) throw new HttpError(400, 'Cannot reply to a reply');
   }
+  // Replies live in their parent's version; root comments go to the requested (or latest) one
+  const versionId = parent ? parent.version_id : (await resolveVersion(project, req.body.version_id)).id;
 
   // Replies inherit the parent's timecode; root comments must supply a valid one
   if (!parent && req.body.timecode === undefined) throw new HttpError(400, 'Timecode is required');
@@ -873,9 +1086,9 @@ app.post('/api/projects/:id/annotations', ah(async (req, res) => {
   const annotationId = crypto.randomUUID();
   const editToken = crypto.randomUUID();
   await dbRun(
-    `INSERT INTO annotations (id, project_id, parent_id, author, text, timecode, timecode_end, status, tags, edit_token)
-     VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
-    [annotationId, project.id, parent ? parent.id : null, author, text, timecode, timecodeEnd, tags, editToken]
+    `INSERT INTO annotations (id, project_id, version_id, parent_id, author, text, timecode, timecode_end, status, tags, edit_token)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
+    [annotationId, project.id, versionId, parent ? parent.id : null, author, text, timecode, timecodeEnd, tags, editToken]
   );
   await touchProject(project.id);
 
@@ -1061,7 +1274,9 @@ async function exportProject(req, res, format) {
     : null;
 
   const project = await getProjectOr404(req.params.id);
-  const all = await dbAll(`SELECT ${ANNOTATION_FIELDS} FROM annotations WHERE project_id = ? ORDER BY timecode ASC, created_at ASC`, [project.id]);
+  const version = await resolveVersion(project, req.query.version);
+  const all = await dbAll(`SELECT ${ANNOTATION_FIELDS} FROM annotations WHERE project_id = ? AND version_id = ? ORDER BY timecode ASC, created_at ASC`,
+    [project.id, version.id]);
   const threads = all
     .filter(a => !a.parent_id)
     .filter(a => !statusFilter || statusFilter.includes(a.status || 0))
@@ -1072,7 +1287,8 @@ async function exportProject(req, res, format) {
     threads, fps, startFrames,
     colorBy: req.query.color === 'tag' ? 'tag' : 'status'
   });
-  const slug = (project.title || 'markers').replace(/[^\p{L}\p{N}_-]+/gu, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'markers';
+  const baseSlug = (project.title || 'markers').replace(/[^\p{L}\p{N}_-]+/gu, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'markers';
+  const slug = `${baseSlug}-v${version.number}`;
   res.setHeader('Content-Type', exporter.type);
   res.setHeader('Content-Disposition',
     `attachment; filename="markers-${project.id.substring(0, 8)}.${exporter.ext}"; filename*=UTF-8''${encodeURIComponent(slug)}.${exporter.ext}`);
@@ -1111,6 +1327,10 @@ async function startServer() {
       console.log('──────────────────────────────────────────────────────────────');
     }
     if (settings.retention_days) console.log(`Auto-cleanup: projects inactive for ${settings.retention_days} days are deleted`);
+    if (ADMIN_AUTH_HEADER) {
+      console.log(`Admin single sign-on: trusting the ${ADMIN_AUTH_HEADER} header${ADMIN_AUTH_USERS.length ? ` for ${ADMIN_AUTH_USERS.join(', ')}` : ''}.`);
+      console.log('  Make sure only your reverse proxy can reach OFA and that it overwrites this header.');
+    }
     console.log(`Admin panel: ${PUBLIC_URL || `http://localhost:${PORT}`}/admin`);
     console.log(`Server running on port ${PORT}`);
   });
