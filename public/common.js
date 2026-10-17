@@ -170,14 +170,16 @@ async function api(method, url, body, { projectId, headers = {} } = {}) {
 
 const Storyboard = {
   _cache: {},
-  load(projectId) {
-    if (!this._cache[projectId]) {
-      this._cache[projectId] = fetch(`/api/projects/${encodeURIComponent(projectId)}/storyboard`)
+  load(projectId, versionId) {
+    const key = `${projectId}:${versionId || ''}`;
+    if (!this._cache[key]) {
+      const q = versionId ? `?version=${encodeURIComponent(versionId)}` : '';
+      this._cache[key] = fetch(`/api/projects/${encodeURIComponent(projectId)}/storyboard${q}`)
         .then(r => r.ok ? r.json() : null)
         .then(sb => (sb && sb.levels && sb.levels.length ? sb : null))
         .catch(() => null);
     }
-    return this._cache[projectId];
+    return this._cache[key];
   },
   // Largest available level (usually 320×180)
   level(sb) {
@@ -267,6 +269,7 @@ const Backup = {
       ...prev,
       id: project.id,
       project: publicProject,
+      versions: extra.versions || prev.versions || [],
       annotations,
       tokens: myTokens,
       editorKey: EditorKeys.get(project.id) || prev.editorKey || null,
@@ -314,6 +317,7 @@ const Backup = {
     const annotations = entry.annotations.map(a => ({ ...a, edit_token: (entry.tokens || {})[a.id] }));
     const result = await api('POST', '/api/projects/restore', {
       project: { ...entry.project, editor_token: entry.editorKey || undefined },
+      versions: entry.versions || [],
       annotations
     });
     EditorKeys.set(id, result.editor_token);

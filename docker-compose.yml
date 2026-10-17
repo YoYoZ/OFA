@@ -11,6 +11,9 @@ services:
       PUBLIC_URL: ${PUBLIC_URL:-}
       TRUST_PROXY: ${TRUST_PROXY:-}
       ALLOWED_ORIGIN: ${ALLOWED_ORIGIN:-}
+      ADMIN_AUTH_HEADER: ${ADMIN_AUTH_HEADER:-}
+      ADMIN_AUTH_USERS: ${ADMIN_AUTH_USERS:-}
+      ADMIN_LOGOUT_URL: ${ADMIN_LOGOUT_URL:-}
     volumes:
       # SQLite database + generated secrets. Back up this folder.
       - ./data:/app/data

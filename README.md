@@ -17,6 +17,7 @@ If it saves you time, [☕ buy me a coffee](https://base.monobank.ua/4QTZuQ2Q8Uf
 | Feature | Details |
 |---|---|
 | 🎥 **YouTube Integration** | Any public or unlisted video — watch, youtu.be, shorts, live and mobile links |
+| 🎞️ **Versions** | Every new cut is a version of the same project; open comments carry over, old cuts stay browsable |
 | ⏱️ **Comments & Ranges** | Comment on a moment or on a range (`I` / `O`); the video pauses as soon as you start typing |
 | 💬 **Threaded Replies** | Reply to any comment; edit or delete your own comments and replies |
 | 🏷️ **Custom Tags** | Up to 8 colour-coded tags per project, editable later |
@@ -118,7 +119,17 @@ For a **range**, press `I` at the start and `O` at the end, then write the comme
 - Tick comments and use the bulk bar to change the status of many at once or delete them.
 - **⚙ Settings** changes the title, description and tags.
 
-### 4. Export to your NLE
+### 4. New cut → new version
+
+When the edit changes, don't create a new project — add a version: **＋ New version** next to the *Cut* selector (editor only).
+
+1. Paste the YouTube link of the new cut, optionally a name (*Colour pass*, *Client round 2*) and what changed — reviewers see it under the title.
+2. Keep **Carry over open comments** ticked: pending and in-progress comments (with their replies) are copied into the new version, marked **↻ from v1**. Accepted and rejected ones stay in the old cut. The authors can still edit or delete their carried comments.
+3. Everyone viewing the project gets the new cut live. Reviewer and editor links always open the latest version; older ones are a click away in the *Cut* selector (or `?v=1` in the address) with a banner pointing to the latest.
+
+Timecodes of carried comments are the old ones — if the edit moved things, open the comment's **✏️ → ⏱ Move here**. Exports and the PDF report are per version (`…-v2.edl`). **✎** renames a version, edits its notes or deletes it together with its comments.
+
+### 5. Export to your NLE
 
 Click **⬇ Export** and choose:
 
@@ -131,11 +142,11 @@ Click **⬇ Export** and choose:
 
 Set the **frame rate** and **start timecode** of your timeline (Resolve timelines start at `01:00:00:00` by default, Premiere at `00:00:00:00`). 29.97 and 59.94 use SMPTE drop-frame timecode. You can restrict the export to certain statuses — e.g. only what is still to do.
 
-### 5. PDF report
+### 6. PDF report
 
 **📄 Report** opens a printable page with the video cover, stats and every comment with its frame, tags, status and replies. Choose which statuses to include, whether to show replies and the frame size, then **Print → Save as PDF**. Frames are marked as *exact* (attached screenshot) or *approx.* (storyboard).
 
-### 6. Keyboard shortcuts
+### 7. Keyboard shortcuts
 
 Press `?` on the project page for the full list.
 
@@ -158,14 +169,14 @@ Press `?` on the project page for the full list.
 
 Shortcuts use physical key positions, so they also work with Cyrillic and other keyboard layouts.
 
-### 7. Your browser backup
+### 8. Your browser backup
 
 Every project you open is stored in your browser (IndexedDB): the project, all its comments, your editor key and the tokens of your own comments. The start page lists them under **My projects**.
 
 - **Export backup / Import backup** moves everything to another browser or computer as a JSON file.
 - If a project was deleted on the server (e.g. by auto-cleanup), its page and the list offer **Restore** — the project is recreated at the same address with all comments, and you become its editor.
 
-### 8. Admin panel
+### 9. Admin panel
 
 Open `/admin` and log in with the password from `.env` (or the generated one from the logs / `data/admin_password.txt`).
 
@@ -175,6 +186,21 @@ Open `/admin` and log in with the password from `.env` (or the generated one fro
 - **Backup** — download a consistent copy of the database
 
 An admin login gives no extra rights inside projects — to moderate one, open its editor link (🔑 in the project list). Sessions last 24 hours and survive restarts.
+
+**Single sign-on (optional).** If OFA runs behind a reverse proxy that already authenticates users (Authelia, oauth2-proxy, Authentik, a custom `auth_request` gate…), set `ADMIN_AUTH_HEADER` to the header the proxy fills with the user name (e.g. `X-Forwarded-User`). The admin panel then opens without the OFA password for those users; `ADMIN_AUTH_USERS` limits it to certain names, `ADMIN_LOGOUT_URL` points the Logout button at the proxy. The password login keeps working next to it. **Only enable this if clients cannot reach OFA except through that proxy and the proxy overwrites the header on every request** — otherwise anyone could send it. Example for nginx:
+
+```nginx
+location ~ ^/(admin|api/admin/) {
+    auth_request /_auth;                                  # your auth endpoint
+    auth_request_set $user $upstream_http_x_auth_user;
+    proxy_set_header X-Forwarded-User $user;              # set by nginx, never by the client
+    proxy_pass http://127.0.0.1:3000;
+}
+location / {
+    proxy_set_header X-Forwarded-User "";                 # strip it everywhere else
+    proxy_pass http://127.0.0.1:3000;
+}
+```
 
 ---
 
@@ -221,9 +247,12 @@ JSON everywhere unless noted. Editor-only calls need the header `X-Editor-Key: <
 | `POST /api/projects` | anyone | `{ youtube_url, title?, description?, tags_config? }` → `201 { project_id, editor_token, share_url, editor_url }` |
 | `GET /api/projects/:id` | anyone | `{ project, annotations, permissions: { review, moderate, admin }, retention }`; `project.editor_token` only for editors |
 | `PATCH /api/projects/:id` | editor | `{ title?, description?, tags_config? }` |
-| `GET /api/projects/:id/storyboard` | anyone | `{ duration, levels: [...] }` — YouTube storyboard sprite sheets for preview frames |
+| `GET /api/projects/:id/storyboard` | anyone | `{ duration, levels: [...] }` — YouTube storyboard sprite sheets for preview frames; `?version=` |
+| `POST /api/projects/:id/versions` | editor | `{ youtube_url, label?, notes?, carry_over? (true), carry_statuses? ([0,3]), from_version_id? }` → `201 { version, annotations, carried }` |
+| `PATCH /api/projects/:id/versions/:versionId` | editor | `{ label?, notes? }` |
+| `DELETE /api/projects/:id/versions/:versionId` | editor | deletes the version and its comments; the last version cannot be deleted |
 | `GET /api/projects/:id/export/:format` | anyone | `format`: `edl` · `xml` · `srt` · `csv`; query `fps`, `start` (`01:00:00:00`), `color` (`status`/`tag`), `statuses` (`0,3`) |
-| `POST /api/projects/restore` | anyone | `{ project, annotations }` from a browser backup; `409` if the project exists |
+| `POST /api/projects/restore` | anyone | `{ project, versions?, annotations }` from a browser backup; `409` if the project exists |
 
 `fps`: `23.976`, `24`, `25`, `29.97`, `30`, `48`, `50`, `59.94`, `60`. The old `GET /api/projects/:id/export/premiere` still returns CSV.
 
@@ -231,7 +260,7 @@ JSON everywhere unless noted. Editor-only calls need the header `X-Editor-Key: <
 
 | Method & path | Who | Notes |
 |---|---|---|
-| `POST /api/projects/:id/annotations` | anyone | `{ author, text, timecode, timecode_end?, tags?, parent_id? }` → `201` with `edit_token` (returned once — keep it) |
+| `POST /api/projects/:id/annotations` | anyone | `{ author, text, timecode, timecode_end?, tags?, parent_id?, version_id? }` → `201` with `edit_token` (returned once — keep it). Without `version_id` the comment goes to the latest version |
 | `PATCH /api/annotations/:id` | author | `{ text?, tags?, timecode?, timecode_end? }` |
 | `DELETE /api/annotations/:id` | author or editor | deleting a root comment deletes its replies |
 | `PATCH /api/annotations/:id/status` | editor | `{ status, by? }` — `0` pending, `3` in progress, `1` accepted, `2` rejected |
@@ -239,7 +268,7 @@ JSON everywhere unless noted. Editor-only calls need the header `X-Editor-Key: <
 | `POST /api/annotations/:id/screenshot` | author or editor | raw `image/jpeg` body, max 4 MB |
 | `GET /api/annotations/:id/screenshot` | anyone | the attached frame |
 
-Replies inherit the parent's timecode; only one level of threading.
+Replies inherit the parent's timecode and version; only one level of threading. `GET /api/projects/:id` returns `versions` (oldest first) and every comment's `version_id`; carried comments have `carried_from` (the id they were copied from). Exports take `?version=` (default: latest).
 
 ### Admin (session cookie)
 
@@ -271,6 +300,8 @@ Socket.io (v4). Every client joins a room named after the project ID:
 | `thread:deleted` | `{ parentId }` | a root comment (and its replies) was deleted |
 | `project:updated` | project | title, description or tags changed |
 | `project:deleted` | `{ id }` | deleted by the admin or by auto-cleanup |
+| `version:created` | `{ version, annotations }` | new cut added (with the carried comments) |
+| `version:updated` / `version:deleted` | version / `{ id }` | version renamed or removed |
 
 Clients re-join the room after a reconnect and re-fetch the project to catch up. Text being typed into reply/edit fields survives live updates.
 
@@ -305,7 +336,10 @@ All settings are environment variables; put them in `.env` (see [`.env.example`]
 | `ALLOWED_ORIGIN` | off | Comma-separated origins allowed to call the API cross-origin |
 | `PORT` | `3000` | Port the server listens on inside the container / process |
 | `DATA_DIR` | `./data` | Where the database and generated secrets are stored |
-| `OFA_PORT` | `3000` | Host port published by `docker compose` |
+| `OFA_PORT` | `3000` | Host port published by `docker compose` (e.g. `127.0.0.1:3000` behind a proxy) |
+| `ADMIN_AUTH_HEADER` | off | Single sign-on for the admin panel: header with the user name set by your auth proxy (see *Admin panel*) |
+| `ADMIN_AUTH_USERS` | anyone | Comma-separated user names allowed in via `ADMIN_AUTH_HEADER` |
+| `ADMIN_LOGOUT_URL` | — | Where the admin Logout button sends single sign-on users |
 
 ---
 

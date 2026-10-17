@@ -119,7 +119,8 @@
             }
 
             $('projectRows').innerHTML = entries.map(e => {
-                const roots = (e.annotations || []).filter(a => !a.parent_id);
+                const latest = (e.versions || []).reduce((m, v) => (!m || v.number > m.number ? v : m), null);
+                const roots = (e.annotations || []).filter(a => !a.parent_id && (!latest || a.version_id === latest.id));
                 const open = roots.filter(a => !a.status || a.status === 3).length;
                 const videoId = extractVideoId(e.project.youtube_url);
                 const id = escapeHtml(e.id);

@@ -110,7 +110,7 @@
         <div id="adminPanel" style="display: none;">
             <header>
                 <h1>🛠️ Admin Panel</h1>
-                <div><a href="/">← Start page</a><button class="btn" id="logoutBtn">Logout</button></div>
+                <div><span id="ssoUser" class="sub" style="margin-right:12px;"></span><a href="/">← Start page</a><button class="btn" id="logoutBtn">Logout</button></div>
             </header>
 
             <div class="stats">
@@ -238,12 +238,22 @@
             }
         });
 
+        let auth = { via: 'password' };
         $('logoutBtn').addEventListener('click', async () => {
+            // Signed in at the reverse proxy: sign out there
+            if (auth.via === 'proxy') { if (auth.logout_url) location.href = auth.logout_url; return; }
             try { await api('POST', '/api/admin/logout'); } catch {}
             show('loginForm');
         });
 
-        async function openPanel() {
+        async function openPanel(check) {
+            if (check) auth = check;
+            const proxy = auth.via === 'proxy';
+            $('ssoUser').textContent = proxy ? `Signed in as ${auth.user} (single sign-on)` : '';
+            $('logoutBtn').style.display = proxy && !auth.logout_url ? 'none' : '';
+            // The proxy already vouched for the user; no current password needed to set the fallback one
+            $('pwCurrent').style.display = proxy ? 'none' : '';
+            $('pwCurrent').required = !proxy;
             show('adminPanel');
             await Promise.all([loadProjects(), loadCleanup()]);
         }
@@ -295,7 +305,7 @@
                             <a class="project-link" href="/project/${encodeURIComponent(p.id)}" target="_blank" rel="noopener">${escapeHtml(p.title || p.id.slice(0, 8) + '…')}</a>
                             <div class="sub"><a href="${escapeHtml(p.youtube_url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(p.youtube_url)}</a></div>
                         </td>
-                        <td>${p.annotations_count}${p.open_count ? ` <span class="sub">(${p.open_count} open)</span>` : ''}</td>
+                        <td>${p.annotations_count}${p.open_count ? ` <span class="sub">(${p.open_count} open)</span>` : ''}${p.versions_count > 1 ? `<div class="sub">v${p.versions_count}</div>` : ''}</td>
                         <td class="hide-sm"><span title="${escapeHtml(String(p.last_activity_at || ''))}">${escapeHtml(timeAgo(p.last_activity_at))}</span>
                             <div class="sub">created ${escapeHtml(formatDate(p.created_at))}</div></td>
                         <td class="hide-sm">${p.pinned ? '<span class="pill">📌 pinned</span>' : expires ? `<span class="${soon ? 'warn' : ''}">${escapeHtml(formatDate(expires))}</span>` : '<span class="sub">—</span>'}</td>
@@ -421,7 +431,7 @@
             e.preventDefault();
             if ($('pwNew').value !== $('pwRepeat').value) { showToast('New passwords do not match', 'error'); return; }
             try {
-                await adminApi('POST', '/api/admin/password', { current: $('pwCurrent').value, next: $('pwNew').value });
+                await adminApi('POST', '/api/admin/password', { current: $('pwCurrent').value || undefined, next: $('pwNew').value });
                 e.target.reset();
                 showToast('Password changed', 'success');
             } catch (err) { showToast(err.message, 'error'); }
@@ -430,7 +440,7 @@
         (async () => {
             try {
                 const data = await api('GET', '/api/admin/check');
-                if (data.authenticated) await openPanel(); else show('loginForm');
+                if (data.authenticated) await openPanel(data); else show('loginForm');
             } catch { show('loginForm'); }
         })();
     </script>

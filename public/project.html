@@ -24,7 +24,16 @@
                 <h2 id="projectTitle"></h2>
                 <p id="projectDescription"></p>
             </div>
+            <div id="versionBar" class="version-bar" style="display:none;">
+                <label for="versionSelect">Cut</label>
+                <select id="versionSelect"></select>
+                <button type="button" class="option-btn" id="newVersionBtn" style="display:none;" title="Upload a new cut of this video">＋ New version</button>
+                <button type="button" class="option-btn" id="editVersionBtn" style="display:none;" title="Rename, notes or delete this version">✎</button>
+                <span id="versionNotes" class="version-notes"></span>
+            </div>
         </header>
+
+        <div id="oldVersionBanner" class="banner banner-info" style="display:none;"></div>
 
         <div id="retentionBanner" class="banner banner-warn" style="display:none;"></div>
 
@@ -136,6 +145,31 @@
                     <label class="field-label">Editor link — can also accept/reject, moderate and change settings</label>
                     <div class="share-url"><input type="text" id="editorLink" readonly><button type="button" data-copy="editorLink">Copy</button></div>
                     <p class="export-hint">Keep the editor link private. The admin can revoke it from the admin panel.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Version modal (editor) -->
+    <div id="version-modal" class="modal-overlay" data-modal>
+        <div class="modal-dialog">
+            <div class="modal-header">
+                <h3 id="versionModalTitle">＋ New version</h3>
+                <button class="modal-close" type="button" data-close>✕</button>
+            </div>
+            <div class="modal-body settings-form">
+                <label class="field-label" for="verUrl">YouTube link of the new cut</label>
+                <input type="text" id="verUrl" maxlength="2048" placeholder="https://youtu.be/...">
+                <label class="field-label" for="verLabel">Name <span class="meta-muted">(optional)</span></label>
+                <input type="text" id="verLabel" maxlength="60" placeholder="e.g. Colour pass, Client round 2">
+                <label class="field-label" for="verNotes">What changed <span class="meta-muted">(optional, shown to reviewers)</span></label>
+                <input type="text" id="verNotes" maxlength="1000" placeholder="e.g. New music, shortened intro">
+                <label class="option-check carry-row" id="verCarryRow">
+                    <input type="checkbox" id="verCarry" checked> <span id="verCarryText"></span>
+                </label>
+                <div class="modal-actions">
+                    <button type="button" class="reply-cancel-btn danger-btn" id="deleteVersionBtn" style="display:none;">Delete this version</button>
+                    <button type="button" class="export-download-btn" id="saveVersion">Save</button>
                 </div>
             </div>
         </div>

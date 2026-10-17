@@ -138,6 +138,7 @@
         <div class="topbar">
             <a id="backLink" href="#">← Back to project</a>
             <div class="controls">
+                <label id="versionPick" style="display:none;">Cut <select id="reportVersion"></select></label>
                 <span id="statusToggles"></span>
                 <label><input type="checkbox" id="showReplies" checked> Replies</label>
                 <label>Frames
@@ -165,6 +166,8 @@
         const prefs = Object.assign({ statuses: [0, 3, 1, 2], replies: true, thumb: 240 }, lsGet('ofa_report', {}));
         let data = null;
         let storyboard = null;
+        let versionId = null;
+        const vName = (v) => `v${v.number}${v.label ? ` · ${v.label}` : ''}`;
 
         function statusBadge(status) {
             const s = STATUS[status || 0];
@@ -182,7 +185,8 @@
             ).join(' ');
             document.getElementById('showReplies').checked = prefs.replies;
             document.getElementById('thumbSize').value = String(prefs.thumb);
-            document.querySelector('.controls').addEventListener('change', () => {
+            document.querySelector('.controls').addEventListener('change', (e) => {
+                if (e.target.id === 'reportVersion') return;
                 prefs.statuses = [...document.querySelectorAll('[data-status]:checked')].map(i => Number(i.dataset.status));
                 prefs.replies = document.getElementById('showReplies').checked;
                 prefs.thumb = Number(document.getElementById('thumbSize').value);
@@ -193,14 +197,17 @@
 
         function render() {
             const content = document.getElementById('content');
-            const { project, annotations } = data;
+            const { project } = data;
+            const version = (data.versions || []).find(v => v.id === versionId);
+            const annotations = version ? data.annotations.filter(a => a.version_id === version.id) : data.annotations;
             const tagsConfig = parseTags(project.tags_config);
             const roots   = annotations.filter(a => !a.parent_id);
             const replies = (id) => annotations.filter(a => a.parent_id === id);
             const count = (code) => roots.filter(a => (a.status || 0) === code).length;
             const shown = roots.filter(a => prefs.statuses.includes(a.status || 0));
 
-            const videoId = extractVideoId(project.youtube_url);
+            const videoUrl = version ? version.youtube_url : project.youtube_url;
+            const videoId = extractVideoId(videoUrl);
             const cover = videoId
                 ? `<img class="cover" src="https://img.youtube.com/vi/${videoId}/mqdefault.jpg" alt="" onerror="this.style.visibility='hidden'">`
                 : '<div class="cover"></div>';
@@ -234,8 +241,9 @@
                     ${cover}
                     <div class="report-meta">
                         <h1>${escapeHtml(project.title || 'Untitled Project')}</h1>
+                        ${version && data.versions.length > 1 ? `<p class="description"><strong>${escapeHtml(vName(version))}</strong>${version.notes ? ` — ${escapeHtml(version.notes)}` : ''}</p>` : ''}
                         ${project.description ? `<p class="description">${escapeHtml(project.description)}</p>` : ''}
-                        <p class="url"><a href="${escapeHtml(project.youtube_url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(project.youtube_url)}</a></p>
+                        <p class="url"><a href="${escapeHtml(videoUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(videoUrl)}</a></p>
                         <p class="export-date">Exported ${escapeHtml(new Date().toLocaleString(undefined, { dateStyle: 'long', timeStyle: 'short' }))}</p>
                     </div>
                 </div>
@@ -258,8 +266,23 @@
             try {
                 data = await api('GET', `/api/projects/${encodeURIComponent(projectId)}`, undefined, { projectId });
                 document.title = `${data.project.title || 'Report'} — Open Frame Annotator`;
+                const versions = [...(data.versions || [])].sort((a, b) => a.number - b.number);
+                const wanted = Number(new URLSearchParams(location.search).get('v'));
+                versionId = (versions.find(v => v.number === wanted) || versions[versions.length - 1] || {}).id || null;
+                if (versions.length > 1) {
+                    const sel = document.getElementById('reportVersion');
+                    sel.innerHTML = [...versions].reverse().map(v => `<option value="${escapeHtml(v.id)}" ${v.id === versionId ? 'selected' : ''}>${escapeHtml(vName(v))}</option>`).join('');
+                    document.getElementById('versionPick').style.display = '';
+                    sel.addEventListener('change', async () => {
+                        versionId = sel.value;
+                        storyboard = null;
+                        render();
+                        storyboard = await Storyboard.load(projectId, versionId);
+                        if (storyboard) render();
+                    });
+                }
                 render();
-                storyboard = await Storyboard.load(projectId);
+                storyboard = await Storyboard.load(projectId, versionId);
                 if (storyboard) render();
             } catch (err) {
                 document.getElementById('content').innerHTML = `<div class="error">Error loading report: ${escapeHtml(err.message)}</div>`;

@@ -4,7 +4,9 @@ let player;
 let project = null;
 let annotations = [];
 let tagsConfig = [];
-let perms = { review: false, moderate: false, admin: false };
+let perms = { review: false, moderate: false };
+let versions = [];
+let currentVersionId = null;
 let storyboard = null;
 let isYouTubeReady = false;
 let videoDuration = 0;
@@ -77,7 +79,12 @@ function playRejectSound() {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 const $ = (id) => document.getElementById(id);
-const roots = () => annotations.filter(a => !a.parent_id);
+// Comments of the cut being viewed (replies follow their root)
+const roots = () => annotations.filter(a => !a.parent_id && (!currentVersionId || a.version_id === currentVersionId));
+const latestVersion = () => versions[versions.length - 1] || null;
+const currentVersion = () => versions.find(v => v.id === currentVersionId) || latestVersion();
+const versionById = (id) => versions.find(v => v.id === id);
+const versionName = (v) => (v ? `v${v.number}${v.label ? ` · ${v.label}` : ''}` : '');
 const repliesOf = (id) => annotations.filter(a => a.parent_id === id);
 const findAnnotation = (id) => annotations.find(a => a.id === id);
 const isOwn = (a) => !!EditTokens.get(a.id);
@@ -96,7 +103,7 @@ let backupTimer = null;
 function scheduleBackup(opened = false) {
   clearTimeout(backupTimer);
   backupTimer = setTimeout(() => {
-    if (project) Backup.saveSnapshot({ ...project }, annotations, { opened });
+    if (project) Backup.saveSnapshot({ ...project }, annotations, { opened, versions });
   }, opened ? 0 : 800);
 }
 
@@ -150,6 +157,7 @@ document.addEventListener('DOMContentLoaded', () => {
   setupFilters();
   setupTimeline();
   setupModals();
+  setupVersions();
   setupKeyboard();
   renderRange();
   loadProject();
@@ -162,7 +170,7 @@ async function loadProject() {
     const data = await api('GET', `/api/projects/${encodeURIComponent(projectId)}`, undefined, { projectId });
     applyProjectData(data);
     document.title = `${project.title || 'Project'} — Open Frame Annotator`;
-    $('reportLink').href = `/project/${encodeURIComponent(projectId)}/report`;
+    updateReportLink();
     $('loading').style.display = 'none';
     $('restorePanel').style.display = 'none';
     $('project-content').style.display = 'block';
@@ -171,7 +179,7 @@ async function loadProject() {
     connectSocket();
     tryInitializePlayer();
 
-    storyboard = await Storyboard.load(projectId);
+    storyboard = await Storyboard.load(projectId, currentVersionId);
     if (storyboard) { renderList(); renderTimeline(); }
   } catch (error) {
     if (error.status === 404) return showRestorePanel();
@@ -185,6 +193,8 @@ function applyProjectData(data) {
   annotations = data.annotations || [];
   perms = data.permissions || perms;
   tagsConfig = parseTags(project.tags_config);
+  setVersions(data.versions || [], true);
+  adoptCarriedTokens();
   // The editor link was revoked by the admin — forget the dead key
   if (EditorKeys.current[projectId] && !perms.moderate) {
     EditorKeys.set(projectId, null);
@@ -194,6 +204,184 @@ function applyProjectData(data) {
   renderHeader(data.retention);
   renderTagSelector();
   renderAll();
+}
+
+// ── Versions (cuts) ────────────────────────────────────────────────────────────
+
+// ?v=<number> in the address picks a cut; without it the latest one is shown
+function setVersions(list, fromUrl = false) {
+  versions = [...list].sort((a, b) => a.number - b.number);
+  let pick = versions.find(v => v.id === currentVersionId);
+  if (fromUrl) {
+    const n = Number(new URLSearchParams(window.location.search).get('v'));
+    pick = versions.find(v => v.number === n) || pick;
+  }
+  currentVersionId = (pick || latestVersion() || {}).id || null;
+}
+
+// Comments carried into a new cut keep the author's edit token; remember it under the new id too
+function adoptCarriedTokens() {
+  const tokens = EditTokens.all();
+  annotations.forEach(a => {
+    if (a.carried_from && !tokens[a.id] && tokens[a.carried_from]) EditTokens.set(a.id, tokens[a.carried_from]);
+  });
+}
+
+function syncVersionUrl() {
+  const v = currentVersion();
+  const url = new URL(window.location.href);
+  if (!v || v === latestVersion()) url.searchParams.delete('v');
+  else url.searchParams.set('v', String(v.number));
+  history.replaceState(null, '', url.pathname + url.search + url.hash);
+}
+
+function updateReportLink() {
+  const v = currentVersion();
+  const q = v && v !== latestVersion() ? `?v=${v.number}` : '';
+  $('reportLink').href = `/project/${encodeURIComponent(projectId)}/report${q}`;
+}
+
+function renderVersionBar() {
+  const bar = $('versionBar');
+  const v = currentVersion();
+  if (!v || (versions.length < 2 && !perms.moderate)) bar.style.display = 'none';
+  else bar.style.display = '';
+  if (!v) return;
+  const latest = latestVersion();
+  $('versionSelect').innerHTML = [...versions].reverse().map(x =>
+    `<option value="${escapeHtml(x.id)}" ${x.id === v.id ? 'selected' : ''}>${escapeHtml(versionName(x))}${x.id === latest.id ? ' (latest)' : ''} — ${escapeHtml(formatDate(x.created_at))}</option>`
+  ).join('');
+  $('newVersionBtn').style.display = perms.moderate ? '' : 'none';
+  $('editVersionBtn').style.display = perms.moderate ? '' : 'none';
+  $('versionNotes').textContent = v.notes || '';
+
+  const banner = $('oldVersionBanner');
+  if (latest && v.id !== latest.id) {
+    banner.innerHTML = `You are looking at <strong>${escapeHtml(versionName(v))}</strong>. The latest cut is <strong>${escapeHtml(versionName(latest))}</strong>.
+      <button type="button" class="small-btn" data-open-latest>Open latest</button>`;
+    banner.style.display = 'block';
+  } else {
+    banner.style.display = 'none';
+  }
+}
+
+async function switchVersion(id) {
+  if (!versionById(id) || id === currentVersionId) return;
+  currentVersionId = id;
+  const v = currentVersion();
+  syncVersionUrl();
+  updateReportLink();
+  selectedId = null; editingId = null; checked.clear(); openReplies.clear(); draftTimecode = null;
+  clearRange();
+  videoDuration = 0;
+  storyboard = null;
+  // If the player is not ready yet, onPlayerReady loads the right video
+  cueCurrentVideo();
+  renderVersionBar();
+  renderAll();
+  storyboard = await Storyboard.load(projectId, id);
+  if (currentVersionId === id) { renderList(); renderTimeline(); }
+}
+
+function cueCurrentVideo() {
+  const v = currentVersion();
+  const videoId = v && extractVideoId(v.youtube_url);
+  if (!videoId || !player || typeof player.cueVideoById !== 'function') return;
+  try {
+    const loaded = player.getVideoData && player.getVideoData().video_id;
+    if (loaded !== videoId) player.cueVideoById(videoId);
+  } catch {}
+}
+
+function addVersion(version) {
+  if (!versionById(version.id)) versions.push(version);
+  versions.sort((a, b) => a.number - b.number);
+}
+
+let versionModalMode = 'new';
+let creatingVersion = false;   // our own upload: skip the live "new cut" toast
+function openVersionModal(mode) {
+  versionModalMode = mode;
+  const v = currentVersion();
+  $('versionModalTitle').textContent = mode === 'new' ? '＋ New version' : `✎ ${versionName(v)}`;
+  $('verUrl').value = mode === 'new' ? '' : v.youtube_url;
+  $('verUrl').disabled = mode !== 'new';
+  $('verLabel').value = mode === 'new' ? '' : (v.label || '');
+  $('verNotes').value = mode === 'new' ? '' : (v.notes || '');
+  const open = roots().filter(a => !a.status || a.status === 3).length;
+  $('verCarryRow').style.display = mode === 'new' && open ? '' : 'none';
+  $('verCarry').checked = true;
+  $('verCarryText').textContent = `Carry over ${open} open comment${open === 1 ? '' : 's'} from ${versionName(v)} (pending and in progress, with replies)`;
+  $('deleteVersionBtn').style.display = mode === 'edit' && versions.length > 1 ? '' : 'none';
+  openModal('version-modal');
+  (mode === 'new' ? $('verUrl') : $('verLabel')).focus();
+}
+
+function setupVersions() {
+  $('versionSelect').addEventListener('change', (e) => switchVersion(e.target.value));
+  $('newVersionBtn').addEventListener('click', () => openVersionModal('new'));
+  $('editVersionBtn').addEventListener('click', () => openVersionModal('edit'));
+  $('oldVersionBanner').addEventListener('click', (e) => {
+    if (e.target.closest('[data-open-latest]')) switchVersion(latestVersion().id);
+  });
+  $('saveVersion').addEventListener('click', async () => {
+    const base = `/api/projects/${encodeURIComponent(projectId)}/versions`;
+    const btn = $('saveVersion');
+    btn.disabled = true;
+    creatingVersion = true;
+    try {
+      if (versionModalMode === 'new') {
+        const res = await api('POST', base, {
+          youtube_url: $('verUrl').value.trim(),
+          label: $('verLabel').value, notes: $('verNotes').value,
+          carry_over: $('verCarry').checked, from_version_id: currentVersionId
+        }, { projectId });
+        addVersion(res.version);
+        res.annotations.forEach(upsertAnnotation);
+        adoptCarriedTokens();
+        closeModals();
+        await switchVersion(res.version.id);
+        showToast(`${versionName(res.version)} added${res.carried ? `, ${res.carried} open comment${res.carried === 1 ? '' : 's'} carried over` : ''}`, 'success');
+      } else {
+        const v = currentVersion();
+        const updated = await api('PATCH', `${base}/${encodeURIComponent(v.id)}`, { label: $('verLabel').value, notes: $('verNotes').value }, { projectId });
+        Object.assign(v, updated);
+        closeModals();
+        renderVersionBar();
+      }
+      scheduleBackup();
+    } catch (e) {
+      showToast(e.message, 'error');
+    } finally {
+      btn.disabled = false;
+      creatingVersion = false;
+    }
+  });
+  $('deleteVersionBtn').addEventListener('click', async () => {
+    const v = currentVersion();
+    const n = roots().length;
+    if (!confirm(`Delete ${versionName(v)} and its ${n} comment${n === 1 ? '' : 's'}? This cannot be undone.`)) return;
+    try {
+      await api('DELETE', `/api/projects/${encodeURIComponent(projectId)}/versions/${encodeURIComponent(v.id)}`, undefined, { projectId });
+      removeVersion(v.id);
+      closeModals();
+      showToast(`${versionName(v)} deleted`, 'info');
+      scheduleBackup();
+    } catch (e) { showToast(e.message, 'error'); }
+  });
+}
+
+function removeVersion(id) {
+  versions = versions.filter(v => v.id !== id);
+  annotations = annotations.filter(a => a.version_id !== id);
+  if (currentVersionId === id) {
+    currentVersionId = null;
+    const latest = latestVersion();
+    if (latest) switchVersion(latest.id);
+  } else {
+    renderVersionBar();
+    renderAll();
+  }
 }
 
 let retentionInfo = null;
@@ -209,6 +397,7 @@ function renderHeader(retention) {
   else badge.style.display = 'none';
   $('settingsBtn').style.display = perms.moderate ? '' : 'none';
   $('bulkBar').style.display = perms.review ? '' : 'none';
+  renderVersionBar();
   document.querySelector('[data-bulk="delete"]').style.display = perms.moderate ? '' : 'none';
 
   const banner = $('retentionBanner');
@@ -278,7 +467,7 @@ function initializePlayer() {
   if (player && typeof player.getPlayerState === 'function') return;
   if (!project || !isYouTubeReady) return;
 
-  const videoId = extractVideoId(project.youtube_url);
+  const videoId = extractVideoId((currentVersion() || project).youtube_url);
   if (!videoId) { showToast('Invalid YouTube link', 'error'); return; }
 
   try {
@@ -296,6 +485,7 @@ function initializePlayer() {
 
 let tickTimer = null;
 function onPlayerReady() {
+  cueCurrentVideo();
   setTimeout(() => {
     try { videoDuration = player.getDuration(); if (videoDuration > 0) renderTimeline(); } catch {}
   }, 500);
@@ -303,7 +493,7 @@ function onPlayerReady() {
 }
 
 function onPlayerStateChange(event) {
-  if (event.data === YT.PlayerState.PLAYING || event.data === YT.PlayerState.BUFFERING) {
+  if (event.data === YT.PlayerState.PLAYING || event.data === YT.PlayerState.BUFFERING || event.data === YT.PlayerState.CUED) {
     try {
       const d = player.getDuration();
       if (d > 0 && d !== videoDuration) { videoDuration = d; renderTimeline(); }
@@ -553,6 +743,7 @@ async function addAnnotation() {
     const created = await api('POST', `/api/projects/${encodeURIComponent(projectId)}/annotations`, {
       author, text, timecode,
       timecode_end: timecodeEnd === null ? undefined : timecodeEnd,
+      version_id: currentVersionId || undefined,
       tags: selectedTags.length ? selectedTags : undefined
     }, { projectId });
     EditTokens.set(created.id, created.edit_token);
@@ -958,6 +1149,12 @@ function statusLine(a) {
   return `<div class="status-line status-${s.key}">${s.icon} ${s.label}${by}${when}</div>`;
 }
 
+function carriedBadge(a) {
+  const src = findAnnotation(a.carried_from);
+  const v = src && versionById(src.version_id);
+  return `<span class="carried-badge" title="Carried over from an earlier cut — the edit may have moved it, check the timecode">↻ from ${v ? `v${v.number}` : 'an earlier cut'}</span>`;
+}
+
 function tagPillsHtml(tagsJson) {
   const tags = parseTags(tagsJson);
   if (!tags.length) return '';
@@ -1027,7 +1224,7 @@ function cardHtml(a) {
           </div>
           ${editing ? editFormHtml(a) : `<div class="annotation-text">${escapeHtml(a.text)}</div>${tagPillsHtml(a.tags)}`}
           ${statusLine(a)}
-          <div class="meta-muted">${escapeHtml(timeAgo(a.created_at))}${a.edited_at ? ' · edited' : ''}</div>
+          <div class="meta-muted">${escapeHtml(timeAgo(a.created_at))}${a.edited_at ? ' · edited' : ''}${a.carried_from ? ` · ${carriedBadge(a)}` : ''}</div>
         </div>
       </div>
       <div class="annotation-actions">
@@ -1236,7 +1433,30 @@ function connectSocket() {
     if (findAnnotation(annotation.id)) return;
     upsertAnnotation(annotation);
     renderAll();
-    showToast(annotation.parent_id ? `${annotation.author} replied to a comment` : `New comment from ${annotation.author}`, 'info');
+    if (annotation.version_id === currentVersionId) {
+      showToast(annotation.parent_id ? `${annotation.author} replied to a comment` : `New comment from ${annotation.author}`, 'info');
+    }
+    scheduleBackup();
+  });
+
+  socket.on('version:created', ({ version, annotations: carried }) => {
+    if (versionById(version.id)) return;
+    addVersion(version);
+    (carried || []).forEach(upsertAnnotation);
+    adoptCarriedTokens();
+    renderVersionBar();
+    if (!creatingVersion) showToast(`New cut uploaded: ${versionName(version)}`, 'info');
+    scheduleBackup();
+  });
+
+  socket.on('version:updated', (version) => {
+    const v = versionById(version.id);
+    if (v) { Object.assign(v, version); renderVersionBar(); scheduleBackup(); }
+  });
+
+  socket.on('version:deleted', ({ id }) => {
+    if (!versionById(id)) return;
+    removeVersion(id);
     scheduleBackup();
   });
 
@@ -1291,6 +1511,11 @@ async function resync() {
     const data = await api('GET', `/api/projects/${encodeURIComponent(projectId)}`, undefined, { projectId });
     annotations = data.annotations || [];
     project = data.project;
+    const before = currentVersionId;
+    setVersions(data.versions || []);
+    adoptCarriedTokens();
+    if (before !== currentVersionId) { currentVersionId = before; const latest = latestVersion(); if (latest) await switchVersion(latest.id); }
+    renderVersionBar();
     renderAll();
     scheduleBackup();
   } catch {}
@@ -1403,6 +1628,7 @@ function setupExportModal() {
     const statuses = [...document.querySelectorAll('#exportStatuses input:checked')].map(i => i.value);
     if (!statuses.length) { showToast('Select at least one status', 'error'); return; }
     const params = new URLSearchParams({ fps: $('exportFps').value, start: $('exportStart').value, color: $('exportColor').value });
+    if (currentVersionId) params.set('version', currentVersionId);
     if (statuses.length < STATUS_ORDER.length) params.set('statuses', statuses.join(','));
     const a = document.createElement('a');
     a.href = `/api/projects/${encodeURIComponent(projectId)}/export/${format}?${params}`;
