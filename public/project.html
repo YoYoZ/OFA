@@ -13,6 +13,8 @@
                 <h1>🎬 <a href="/" class="back-link">Open Frame Annotator</a></h1>
                 <div class="header-actions">
                     <span id="roleBadge" class="role-badge" style="display:none;"></span>
+                    <button class="header-action-btn" id="doneBtn" type="button" style="display:none;" title="Tell the editor you have finished reviewing this cut">✅ Done reviewing</button>
+                    <button class="header-action-btn" id="telegramBtn" type="button" style="display:none;" title="Get notifications in Telegram">🔔 Telegram</button>
                     <button class="header-action-btn" id="shareBtn" type="button">🔗 Share</button>
                     <button class="header-action-btn" id="settingsBtn" type="button" style="display:none;">⚙ Settings</button>
                     <button class="header-action-btn" id="exportBtn" type="button">⬇ Export</button>
@@ -146,6 +148,21 @@
                     <div class="share-url"><input type="text" id="editorLink" readonly><button type="button" data-copy="editorLink">Copy</button></div>
                     <p class="export-hint">Keep the editor link private. The admin can revoke it from the admin panel.</p>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Telegram modal -->
+    <div id="telegram-modal" class="modal-overlay" data-modal>
+        <div class="modal-dialog">
+            <div class="modal-header">
+                <h3>🔔 Telegram notifications</h3>
+                <button class="modal-close" type="button" data-close>✕</button>
+            </div>
+            <div class="modal-body">
+                <p class="tg-what" id="tgWhat"></p>
+                <a class="export-download-btn tg-open" id="tgOpen" href="#" target="_blank" rel="noopener">Open Telegram and press Start →</a>
+                <p class="export-hint">The link works once and for 24 hours. In the bot, /list shows your subscriptions and lets you unsubscribe.</p>
             </div>
         </div>
     </div>

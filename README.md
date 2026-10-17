@@ -27,6 +27,7 @@ If it saves you time, [☕ buy me a coffee](https://base.monobank.ua/4QTZuQ2Q8Uf
 | 🖼️ **Frames** | Automatic preview frames from YouTube's storyboard, or attach the exact frame (tab capture) |
 | 🎞️ **NLE Export** | DaVinci Resolve markers (EDL, coloured), Premiere Pro markers (FCP XML), on-screen subtitles (SRT), CSV |
 | 📄 **PDF Report** | Printable report with frames, stats and replies; filter what goes in |
+| 🔔 **Telegram Notifications** | Optional bot: comment digests for the editor, new cuts and replies for reviewers, “review finished” button |
 | ⚡ **Real-Time Collaboration** | Everyone sees new comments, edits and status changes instantly; reconnects catch up automatically |
 | ⌨️ **Keyboard-First** | Enter to send, J/K/L shuttle, frame stepping, N/P to walk through comments, 1/2/3 to set status |
 | 💾 **Browser Backup** | Every project you open is kept in your browser; export/import it, restore deleted projects |
@@ -142,11 +143,24 @@ Click **⬇ Export** and choose:
 
 Set the **frame rate** and **start timecode** of your timeline (Resolve timelines start at `01:00:00:00` by default, Premiere at `00:00:00:00`). 29.97 and 59.94 use SMPTE drop-frame timecode. You can restrict the export to certain statuses — e.g. only what is still to do.
 
-### 6. PDF report
+### 6. Telegram notifications (optional)
+
+With `TELEGRAM_BOT_TOKEN` set (create a bot with [@BotFather](https://t.me/BotFather)), project pages get a **🔔 Telegram** button. It opens the bot with a one-time link; press **Start** and the chat is subscribed to that project — as the editor when you came from the editor link, otherwise as a reviewer (under the name from the comment form).
+
+| You are | You get |
+|---|---|
+| Editor | Digests of new comments and replies — one message after a quiet period (`TELEGRAM_DIGEST_SECONDS`, default 2 min), not one per comment. A summary when a reviewer presses **✅ Done reviewing**. |
+| Reviewer | New cuts (with notes and how many comments were carried over), replies to your comments, status changes on them. |
+
+Nobody is notified about their own actions. In the bot, `/list` shows subscriptions with unsubscribe buttons, `/stop` unsubscribes from everything. The bot uses long polling — no webhook or open port is needed; `PUBLIC_URL` should be set so messages link back to the project. A bot token can only be used by one app at a time.
+
+**✅ Done reviewing** also works without Telegram: editors who have the project open see a notice right away.
+
+### 7. PDF report
 
 **📄 Report** opens a printable page with the video cover, stats and every comment with its frame, tags, status and replies. Choose which statuses to include, whether to show replies and the frame size, then **Print → Save as PDF**. Frames are marked as *exact* (attached screenshot) or *approx.* (storyboard).
 
-### 7. Keyboard shortcuts
+### 8. Keyboard shortcuts
 
 Press `?` on the project page for the full list.
 
@@ -169,14 +183,14 @@ Press `?` on the project page for the full list.
 
 Shortcuts use physical key positions, so they also work with Cyrillic and other keyboard layouts.
 
-### 8. Your browser backup
+### 9. Your browser backup
 
 Every project you open is stored in your browser (IndexedDB): the project, all its comments, your editor key and the tokens of your own comments. The start page lists them under **My projects**.
 
 - **Export backup / Import backup** moves everything to another browser or computer as a JSON file.
 - If a project was deleted on the server (e.g. by auto-cleanup), its page and the list offer **Restore** — the project is recreated at the same address with all comments, and you become its editor.
 
-### 9. Admin panel
+### 10. Admin panel
 
 Open `/admin` and log in with the password from `.env` (or the generated one from the logs / `data/admin_password.txt`).
 
@@ -252,6 +266,8 @@ JSON everywhere unless noted. Editor-only calls need the header `X-Editor-Key: <
 | `PATCH /api/projects/:id/versions/:versionId` | editor | `{ label?, notes? }` |
 | `DELETE /api/projects/:id/versions/:versionId` | editor | deletes the version and its comments; the last version cannot be deleted |
 | `GET /api/projects/:id/export/:format` | anyone | `format`: `edl` · `xml` · `srt` · `csv`; query `fps`, `start` (`01:00:00:00`), `color` (`status`/`tag`), `statuses` (`0,3`) |
+| `POST /api/projects/:id/telegram` | anyone | `{ author? }` → `{ url, role }` one-time `t.me` subscribe link (`404` if Telegram is off) |
+| `POST /api/projects/:id/review-done` | anyone | `{ author, version_id? }` → notifies editors (Telegram + live); once a minute per person |
 | `POST /api/projects/restore` | anyone | `{ project, versions?, annotations }` from a browser backup; `409` if the project exists |
 
 `fps`: `23.976`, `24`, `25`, `29.97`, `30`, `48`, `50`, `59.94`, `60`. The old `GET /api/projects/:id/export/premiere` still returns CSV.
@@ -302,6 +318,7 @@ Socket.io (v4). Every client joins a room named after the project ID:
 | `project:deleted` | `{ id }` | deleted by the admin or by auto-cleanup |
 | `version:created` | `{ version, annotations }` | new cut added (with the carried comments) |
 | `version:updated` / `version:deleted` | version / `{ id }` | version renamed or removed |
+| `review:done` | `{ author, version_id }` | a reviewer pressed **Done reviewing** |
 
 Clients re-join the room after a reconnect and re-fetch the project to catch up. Text being typed into reply/edit fields survives live updates.
 
@@ -340,6 +357,8 @@ All settings are environment variables; put them in `.env` (see [`.env.example`]
 | `ADMIN_AUTH_HEADER` | off | Single sign-on for the admin panel: header with the user name set by your auth proxy (see *Admin panel*) |
 | `ADMIN_AUTH_USERS` | anyone | Comma-separated user names allowed in via `ADMIN_AUTH_HEADER` |
 | `ADMIN_LOGOUT_URL` | — | Where the admin Logout button sends single sign-on users |
+| `TELEGRAM_BOT_TOKEN` | off | Enables Telegram notifications (token from @BotFather) |
+| `TELEGRAM_DIGEST_SECONDS` | `120` | Quiet period before a comment digest is sent |
 
 ---
 

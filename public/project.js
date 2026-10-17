@@ -5,6 +5,7 @@ let project = null;
 let annotations = [];
 let tagsConfig = [];
 let perms = { review: false, moderate: false };
+let telegramEnabled = false;
 let versions = [];
 let currentVersionId = null;
 let storyboard = null;
@@ -192,6 +193,7 @@ function applyProjectData(data) {
   project = data.project;
   annotations = data.annotations || [];
   perms = data.permissions || perms;
+  telegramEnabled = !!data.telegram;
   tagsConfig = parseTags(project.tags_config);
   setVersions(data.versions || [], true);
   adoptCarriedTokens();
@@ -397,6 +399,8 @@ function renderHeader(retention) {
   else badge.style.display = 'none';
   $('settingsBtn').style.display = perms.moderate ? '' : 'none';
   $('bulkBar').style.display = perms.review ? '' : 'none';
+  $('telegramBtn').style.display = telegramEnabled ? '' : 'none';
+  $('doneBtn').style.display = perms.moderate ? 'none' : '';
   renderVersionBar();
   document.querySelector('[data-bulk="delete"]').style.display = perms.moderate ? '' : 'none';
 
@@ -1449,6 +1453,12 @@ function connectSocket() {
     scheduleBackup();
   });
 
+  socket.on('review:done', ({ author, version_id }) => {
+    if (!perms.moderate) return;
+    const v = versionById(version_id);
+    showToast(`✅ ${author} finished reviewing${versions.length > 1 && v ? ` ${versionName(v)}` : ''}`, 'success');
+  });
+
   socket.on('version:updated', (version) => {
     const v = versionById(version.id);
     if (v) { Object.assign(v, version); renderVersionBar(); scheduleBackup(); }
@@ -1574,6 +1584,32 @@ function setupModals() {
   });
 
   $('helpBtn').addEventListener('click', () => openModal('help-modal'));
+
+  $('telegramBtn').addEventListener('click', async () => {
+    const name = authorName();
+    // Reviewers are matched by name to get replies and status changes on their comments
+    if (!perms.moderate && !name) { showToast('Enter your name in the comment form first', 'error'); $('authorName').focus(); return; }
+    try {
+      const res = await api('POST', `/api/projects/${encodeURIComponent(projectId)}/telegram`, { author: name || undefined }, { projectId });
+      $('tgWhat').textContent = res.role === 'editor'
+        ? 'As the editor you will get digests of new comments and replies, and a note when a reviewer finishes.'
+        : `You will get new cuts, replies to your comments and status changes on them (as “${name}”).`;
+      $('tgOpen').href = res.url;
+      openModal('telegram-modal');
+    } catch (e) { showToast(e.message, 'error'); }
+  });
+  $('tgOpen').addEventListener('click', () => setTimeout(closeModals, 300));
+
+  $('doneBtn').addEventListener('click', async () => {
+    const name = authorName();
+    if (!name) { showToast('Enter your name in the comment form first', 'error'); $('authorName').focus(); return; }
+    const v = currentVersion();
+    if (!confirm(`Tell the editor you have finished reviewing${versions.length > 1 ? ` ${versionName(v)}` : ''}?`)) return;
+    try {
+      const res = await api('POST', `/api/projects/${encodeURIComponent(projectId)}/review-done`, { author: name, version_id: currentVersionId || undefined }, { projectId });
+      showToast(res.notified ? 'The editor has been notified' : 'Sent — the editor will see it on the project page', 'success');
+    } catch (e) { showToast(e.message, 'error'); }
+  });
   setupExportModal();
 }
 

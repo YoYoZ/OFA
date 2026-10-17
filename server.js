@@ -13,6 +13,7 @@ require('dotenv').config();
 const tc = require('./lib/timecode');
 const { FORMATS } = require('./lib/exporters');
 const { parseYouTubeId, fetchStoryboard } = require('./lib/youtube');
+const { createTelegram } = require('./lib/telegram');
 
 const PORT = parseInt(process.env.PORT, 10) || 3000;
 const DATA_DIR = path.resolve(process.env.DATA_DIR || path.join(__dirname, 'data'));
@@ -35,6 +36,11 @@ const VERSION_FIELDS = 'id, project_id, number, label, notes, youtube_url, creat
 const ADMIN_AUTH_HEADER = (process.env.ADMIN_AUTH_HEADER || '').trim();
 const ADMIN_AUTH_USERS = (process.env.ADMIN_AUTH_USERS || '').split(',').map(u => u.trim()).filter(Boolean);
 const ADMIN_LOGOUT_URL = (process.env.ADMIN_LOGOUT_URL || '').trim();
+
+// Optional Telegram notifications (see lib/telegram.js)
+const TELEGRAM_BOT_TOKEN = (process.env.TELEGRAM_BOT_TOKEN || '').trim();
+const TELEGRAM_DIGEST_SECONDS = Math.max(1, parseInt(process.env.TELEGRAM_DIGEST_SECONDS, 10) || 120);
+let telegram = null;
 
 fs.mkdirSync(SCREENSHOT_DIR, { recursive: true });
 
@@ -172,6 +178,23 @@ async function initDatabase() {
     youtube_url TEXT NOT NULL,
     created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
     UNIQUE (project_id, number)
+  )`);
+
+  await dbRun(`CREATE TABLE IF NOT EXISTS telegram_subs (
+    chat_id    INTEGER NOT NULL,
+    project_id TEXT NOT NULL,
+    role       TEXT NOT NULL,
+    author     TEXT,
+    created_at INTEGER,
+    PRIMARY KEY (chat_id, project_id)
+  )`);
+
+  await dbRun(`CREATE TABLE IF NOT EXISTS telegram_links (
+    code       TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    role       TEXT NOT NULL,
+    author     TEXT,
+    created_at INTEGER NOT NULL
   )`);
 
   await dbRun(`CREATE TABLE IF NOT EXISTS settings (
@@ -504,6 +527,12 @@ async function publicAnnotation(id) {
   return dbGet(`SELECT ${ANNOTATION_FIELDS} FROM annotations WHERE id = ?`, [id]);
 }
 
+// Notifications must never break the request that triggered them
+function notify(fn) {
+  if (!telegram) return;
+  Promise.resolve().then(fn).catch(err => console.warn('Telegram notify failed:', err.message));
+}
+
 function touchProject(id) {
   return dbRun('UPDATE projects SET last_activity_at = CURRENT_TIMESTAMP WHERE id = ?', [id]);
 }
@@ -536,6 +565,7 @@ async function deleteProjects(ids) {
     await dbRun('DELETE FROM versions WHERE project_id = ?', [id]);
     const result = await dbRun('DELETE FROM projects WHERE id = ?', [id]);
     removeScreenshots(annotations.map(a => a.id));
+    notify(() => telegram.projectDeleted(id));
     if (result.changes) {
       deleted++;
       io.to(id).emit('project:deleted', { id });
@@ -825,6 +855,7 @@ app.get('/api/projects/:id', ah(async (req, res) => {
     versions: await getVersions(project.id),
     annotations,
     permissions: perms,
+    telegram: !!(telegram && telegram.username),
     retention: { days: settings.retention_days, warn_days: settings.retention_warn_days }
   });
 }));
@@ -859,6 +890,32 @@ app.get('/api/projects/:id/storyboard', ah(async (req, res) => {
   if (!videoId) return res.json({ duration: 0, levels: [] });
   res.setHeader('Cache-Control', 'private, max-age=3600');
   res.json(await fetchStoryboard(videoId));
+}));
+
+// ── Telegram ─────────────────────────────────────────────────────────────────
+
+// One-time t.me link that subscribes a chat to this project with the caller's role
+app.post('/api/projects/:id/telegram', ah(async (req, res) => {
+  if (!telegram || !telegram.username) throw new HttpError(404, 'Telegram notifications are not enabled');
+  const project = await getProjectOr404(req.params.id);
+  const role = permissionsFor(req, project).moderate ? 'editor' : 'reviewer';
+  const author = optionalString(req.body.author, 100, 'name');
+  res.json({ url: await telegram.createLink(project.id, role, author), role });
+}));
+
+const reviewDoneAt = new Map();
+// A reviewer tells the editors they are finished with this cut
+app.post('/api/projects/:id/review-done', ah(async (req, res) => {
+  const project = await getProjectOr404(req.params.id);
+  const author = requiredString(req.body.author, 100, 'name');
+  const version = await resolveVersion(project, req.body.version_id);
+  const key = `${project.id}:${version.id}:${author.toLowerCase()}`;
+  if (Date.now() - (reviewDoneAt.get(key) || 0) < 60000) throw new HttpError(429, 'Already sent — wait a minute');
+  reviewDoneAt.set(key, Date.now());
+  if (reviewDoneAt.size > 5000) reviewDoneAt.clear();
+  io.to(project.id).emit('review:done', { author, version_id: version.id });
+  const notified = telegram ? await telegram.reviewDone(project.id, version.id, author).catch(() => 0) : 0;
+  res.json({ success: true, notified });
 }));
 
 // ── Versions (cuts) ──────────────────────────────────────────────────────────
@@ -914,6 +971,7 @@ app.post('/api/projects/:id/versions', ah(async (req, res) => {
     ? await dbAll(`SELECT ${ANNOTATION_FIELDS} FROM annotations WHERE version_id = ? ORDER BY timecode ASC, created_at ASC`, [version.id])
     : [];
   io.to(project.id).emit('version:created', { version: created, annotations: carried });
+  notify(() => telegram.versionCreated(project.id, created, carried.filter(a => !a.parent_id).length));
   res.status(201).json({ version: created, annotations: carried, carried: carried.filter(a => !a.parent_id).length });
 }));
 
@@ -1094,6 +1152,7 @@ app.post('/api/projects/:id/annotations', ah(async (req, res) => {
 
   const annotation = await publicAnnotation(annotationId);
   io.to(project.id).emit('annotation:created', annotation);
+  notify(() => telegram.annotationCreated(annotation));
   res.status(201).json({ ...annotation, edit_token: editToken });
 }));
 
@@ -1161,6 +1220,7 @@ async function setStatus(annotation, status, by) {
   io.to(annotation.project_id).emit('annotation:status', {
     id: row.id, status: row.status, status_by: row.status_by, status_at: row.status_at
   });
+  notify(() => telegram.statusChanged(row, row.status, by));
   return row;
 }
 
@@ -1316,7 +1376,27 @@ app.use((err, req, res, next) => {
 
 // ── Startup / shutdown ───────────────────────────────────────────────────────
 
+async function startTelegram() {
+  if (!TELEGRAM_BOT_TOKEN) return;
+  if (!PUBLIC_URL) console.warn('Telegram: PUBLIC_URL is not set — messages will not contain links to projects.');
+  telegram = createTelegram({
+    token: TELEGRAM_BOT_TOKEN,
+    apiBase: process.env.TELEGRAM_API_BASE || undefined,
+    publicUrl: PUBLIC_URL,
+    digestMs: TELEGRAM_DIGEST_SECONDS * 1000,
+    db: { dbRun, dbGet, dbAll }
+  });
+  try {
+    const name = await telegram.start();
+    console.log(`Telegram notifications: @${name} (digest after ${TELEGRAM_DIGEST_SECONDS}s of quiet)`);
+  } catch (err) {
+    console.error(`Telegram disabled: ${err.message}`);
+    telegram = null;
+  }
+}
+
 async function startServer() {
+  await startTelegram();
   const customPassword = await dbGet(`SELECT value FROM settings WHERE key = 'admin_password_hash'`);
   server.listen(PORT, () => {
     if (adminPassword.generated && !customPassword) {
@@ -1347,7 +1427,9 @@ function shutdown(signal) {
   console.log(`${signal} received, shutting down...`);
   setTimeout(() => process.exit(1), 10000).unref();
   // io.close() also closes the underlying HTTP server
-  io.close(() => {
+  const telegramDone = telegram ? telegram.stop().catch(() => {}) : Promise.resolve();
+  io.close(async () => {
+    await telegramDone;
     db.close((err) => {
       if (err) console.error(err.message);
       console.log('Database connection closed');

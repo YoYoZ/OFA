@@ -1539,3 +1539,13 @@ kbd {
 .danger-btn { color: #e74c3c !important; margin-right: auto; }
 .danger-btn:hover { background: #3a1a1a !important; }
 .modal-actions { gap: 10px; }
+
+/* Telegram */
+.tg-what { color: #ccc; font-size: 0.9rem; line-height: 1.5; margin-bottom: 16px; }
+.tg-open { display: inline-block; text-decoration: none; padding: 10px 18px; }
+
+/* Header: keep button labels on one line, wrap the row instead */
+.header-action-btn { white-space: nowrap; }
+.header-top { flex-wrap: wrap; gap: 10px 16px; }
+.header-actions { flex-wrap: wrap; justify-content: flex-end; }
+.header-top h1 { white-space: nowrap; }

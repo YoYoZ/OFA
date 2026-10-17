@@ -14,6 +14,8 @@ services:
       ADMIN_AUTH_HEADER: ${ADMIN_AUTH_HEADER:-}
       ADMIN_AUTH_USERS: ${ADMIN_AUTH_USERS:-}
       ADMIN_LOGOUT_URL: ${ADMIN_LOGOUT_URL:-}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_DIGEST_SECONDS: ${TELEGRAM_DIGEST_SECONDS:-}
     volumes:
       # SQLite database + generated secrets. Back up this folder.
       - ./data:/app/data
